@@ -1,27 +1,43 @@
 import { useState } from "react";
-import { demoUsers } from "../data/users";
 
 export default function LoginPage({ onLogin }) {
   const [email, setEmail] = useState("retail@tvs.com");
   const [password, setPassword] = useState("agent123");
   const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
 
-  const submitLogin = (event) => {
+  const submitLogin = async (event) => {
     event.preventDefault();
-
-    const user = demoUsers.find(
-      (item) =>
-        item.email.toLowerCase() === email.trim().toLowerCase() &&
-        item.password === password,
-    );
-
-    if (!user) {
-      setError("Invalid email or password.");
-      return;
-    }
-
     setError("");
-    onLogin(user);
+    setLoading(true);
+
+    try {
+      const response = await fetch("http://localhost:4000/api/auth/login", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ email, password }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.message || "Invalid email or password.");
+      }
+
+      const data = await response.json();
+
+      // Store JWT token
+      localStorage.setItem("authToken", data.accessToken);
+      localStorage.setItem("user", JSON.stringify(data));
+
+      // Call onLogin with user data
+      onLogin(data);
+    } catch (err) {
+      setError(err.message || "Login failed. Please try again.");
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -154,8 +170,8 @@ export default function LoginPage({ onLogin }) {
               />
             </label>
             {error && <p className="login-error">{error}</p>}
-            <button className="primary-action" type="submit">
-              Login
+            <button className="primary-action" type="submit" disabled={loading}>
+              {loading ? "Logging in..." : "Login"}
             </button>
           </form>
 
@@ -171,3 +187,4 @@ export default function LoginPage({ onLogin }) {
     </main>
   );
 }
+

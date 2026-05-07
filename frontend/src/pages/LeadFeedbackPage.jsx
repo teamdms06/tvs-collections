@@ -127,11 +127,7 @@ function SearchModal({ lead, onClose, onOpen }) {
   );
 }
 
-export default function LeadFeedbackPage({
-  config,
-  onLogout,
-  user,
-}) {
+export default function LeadFeedbackPage({ config, onLogout, user }) {
   const [activeLead, setActiveLead] = useState(null);
   const [previewLead, setPreviewLead] = useState(null);
   const [searchQuery, setSearchQuery] = useState("");
@@ -164,7 +160,8 @@ export default function LeadFeedbackPage({
     event.preventDefault();
     setLoading(true);
     setNotice("");
-
+    console.log(searchQuery);
+    console.log(config.key);
     try {
       const results = await searchConsumerLeads(searchQuery, config.key);
       setSearchResults(results);
@@ -255,7 +252,11 @@ export default function LeadFeedbackPage({
         </div>
         {notice && <p className="notice">{notice}</p>}
         <nav aria-label="Role based forms">
-          <button className="access-pill access-pill--active" onClick={goDashboard} type="button">
+          <button
+            className="access-pill access-pill--active"
+            onClick={goDashboard}
+            type="button"
+          >
             Dashboard
           </button>
           <form className="search-box" onSubmit={onSearch}>
@@ -298,9 +299,7 @@ export default function LeadFeedbackPage({
       {!activeLead && (
         <section className="empty-state">
           <h2>{user.name} Dashboard</h2>
-          <p>
-            Search and open a {config.label} lead to start feedback.
-          </p>
+          <p>Search and open a {config.label} lead to start feedback.</p>
         </section>
       )}
 

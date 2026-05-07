@@ -1,0 +1,18 @@
+# Java build output
+/target/
+
+# Maven wrapper files
+.mvn/
+
+# IDE files
+*.iml
+.idea/
+.vscode/
+*.class
+
+# H2 database files
+/data/*.db
+
+# Legacy Node files
+node_modules/
+uploads/
