@@ -609,6 +609,7 @@ export default function LeadFeedbackPage({ config, onLogout, user }) {
       );
       setActiveLead(fullLead);
       setPreviewLead(null);
+      setSearchResults([]);
       setFeedbackValues({
         ...createInitialFeedback(config, fullLead),
         status: bestDispoGroup?.name || "",

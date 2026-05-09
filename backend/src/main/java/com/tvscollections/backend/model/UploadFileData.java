@@ -8,7 +8,14 @@ import java.time.LocalDateTime;
 
 @JsonIgnoreProperties({"hibernateLazyInitializer", "handler"})
 @Entity
-@Table(name = "upload_file_data")
+@Table(
+        name = "upload_file_data",
+        indexes = {
+                @Index(name = "idx_upload_file_data_product_mobile", columnList = "product_id, mobile_number"),
+                @Index(name = "idx_upload_file_data_upload_file", columnList = "upload_file_id"),
+                @Index(name = "idx_upload_file_data_product_agreement", columnList = "product_id, agreement_number")
+        }
+)
 public class UploadFileData {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)

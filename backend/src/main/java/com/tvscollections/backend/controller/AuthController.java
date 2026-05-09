@@ -41,14 +41,18 @@ public class AuthController {
 
     @PostMapping("/logout")
     public ResponseEntity<?> logout() {
-        if (SecurityContextHolder.getContext().getAuthentication() != null
-                && !(SecurityContextHolder.getContext().getAuthentication() instanceof AnonymousAuthenticationToken)) {
-            activeUserTrackerService.markInactive(
-                    SecurityContextHolder.getContext().getAuthentication().getName()
-            );
-        }
+        try {
+            if (SecurityContextHolder.getContext().getAuthentication() != null
+                    && !(SecurityContextHolder.getContext().getAuthentication() instanceof AnonymousAuthenticationToken)) {
+                activeUserTrackerService.markInactive(
+                        SecurityContextHolder.getContext().getAuthentication().getName()
+                );
+            }
 
-        return ResponseEntity.ok().body("Logged out");
+            return ResponseEntity.ok().body("Logged out");
+        } catch (Exception error) {
+            return handleControllerError("Logout failed", HttpStatus.INTERNAL_SERVER_ERROR, error.getMessage(), error);
+        }
     }
 
     private ResponseEntity<Map<String, String>> handleControllerError(

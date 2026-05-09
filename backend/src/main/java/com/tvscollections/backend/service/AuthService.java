@@ -57,7 +57,15 @@ public class AuthService {
     }
 
     private boolean hasAdminRole(List<String> roles) {
-        return roles.stream().anyMatch(role -> "admin".equalsIgnoreCase(role));
+        return roles.stream().anyMatch(role -> {
+            if (role == null) {
+                return false;
+            }
+
+            String normalizedRole = role.trim();
+            return "admin".equalsIgnoreCase(normalizedRole)
+                    || "role_admin".equalsIgnoreCase(normalizedRole);
+        });
     }
 }
 

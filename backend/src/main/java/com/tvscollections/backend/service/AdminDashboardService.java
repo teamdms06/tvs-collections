@@ -18,21 +18,26 @@ import org.apache.poi.ss.usermodel.IndexedColors;
 import org.apache.poi.ss.usermodel.Row;
 import org.apache.poi.ss.usermodel.Sheet;
 import org.apache.poi.ss.usermodel.Workbook;
-import org.apache.poi.xssf.usermodel.XSSFWorkbook;
+import org.apache.poi.xssf.streaming.SXSSFWorkbook;
 import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Slice;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 import org.springframework.http.HttpStatus;
 
-import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.io.OutputStream;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
 
 @Service
 public class AdminDashboardService {
+    private static final int EXPORT_PAGE_SIZE = 1000;
+    private static final int EXPORT_ROW_WINDOW_SIZE = 100;
+
     private static final String[] FEEDBACK_EXPORT_HEADERS = {
             "UID",
             "list id",
@@ -120,7 +125,7 @@ public class AdminDashboardService {
     }
 
     @Transactional(readOnly = true)
-    public byte[] exportFeedback(LocalDate startDate, LocalDate endDate) {
+    public void exportFeedback(LocalDate startDate, LocalDate endDate, OutputStream outputStream) {
         if (startDate == null || endDate == null) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Start date and end date are required");
         }
@@ -131,10 +136,9 @@ public class AdminDashboardService {
 
         LocalDateTime start = startDate.atStartOfDay();
         LocalDateTime endExclusive = endDate.plusDays(1).atStartOfDay();
-        List<Feedback> feedbackRows = feedbackRepository.findExportRowsByCreatedAtBetween(start, endExclusive);
 
-        try (Workbook workbook = new XSSFWorkbook();
-             ByteArrayOutputStream outputStream = new ByteArrayOutputStream()) {
+        try (SXSSFWorkbook workbook = new SXSSFWorkbook(EXPORT_ROW_WINDOW_SIZE)) {
+            workbook.setCompressTempFiles(true);
             Sheet sheet = workbook.createSheet("Feedback Export");
             CellStyle[] headerStyles = createHeaderStyles(workbook);
             Row headerRow = sheet.createRow(0);
@@ -145,16 +149,24 @@ public class AdminDashboardService {
             }
 
             int rowIndex = 1;
-            for (Feedback feedback : feedbackRows) {
-                writeFeedbackExportRow(sheet.createRow(rowIndex++), feedback);
-            }
+            Pageable pageable = PageRequest.of(0, EXPORT_PAGE_SIZE);
+            Slice<Feedback> feedbackRows;
+            do {
+                feedbackRows = feedbackRepository.findExportRowsByCreatedAtBetween(start, endExclusive, pageable);
+                for (Feedback feedback : feedbackRows.getContent()) {
+                    writeFeedbackExportRow(sheet.createRow(rowIndex++), feedback);
+                }
+                pageable = feedbackRows.nextPageable();
+            } while (feedbackRows.hasNext());
 
             for (int columnIndex = 0; columnIndex < FEEDBACK_EXPORT_HEADERS.length; columnIndex++) {
-                sheet.autoSizeColumn(columnIndex);
+                sheet.setColumnWidth(columnIndex, getExportColumnWidth(columnIndex));
             }
 
+
             workbook.write(outputStream);
-            return outputStream.toByteArray();
+            outputStream.flush();
+            workbook.dispose();
         } catch (IOException error) {
             throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "Could not create export file", error);
         }
@@ -228,6 +240,14 @@ public class AdminDashboardService {
             return 5;
         }
         return 6;
+    }
+
+    private int getExportColumnWidth(int columnIndex) {
+        return switch (columnIndex) {
+            case 4, 9, 10, 26, 31 -> 18 * 256;
+            case 5, 8, 12, 28, 35, 36, 37 -> 28 * 256;
+            default -> 16 * 256;
+        };
     }
 
     private void writeFeedbackExportRow(Row row, Feedback feedback) {

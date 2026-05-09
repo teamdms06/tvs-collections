@@ -2,6 +2,8 @@ package com.tvscollections.backend.repository;
 
 import com.tvscollections.backend.dto.FeedbackHistoryDto;
 import com.tvscollections.backend.model.Feedback;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Slice;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -33,10 +35,11 @@ public interface FeedbackRepository extends JpaRepository<Feedback, Long> {
             JOIN FETCH f.agent agent
             WHERE f.createdAt >= :start
               AND f.createdAt < :end
-            ORDER BY lead.id ASC, f.createdAt DESC
+            ORDER BY lead.id ASC, f.createdAt DESC, f.id DESC
             """)
-    List<Feedback> findExportRowsByCreatedAtBetween(@Param("start") LocalDateTime start,
-                                                    @Param("end") LocalDateTime end);
+    Slice<Feedback> findExportRowsByCreatedAtBetween(@Param("start") LocalDateTime start,
+                                                     @Param("end") LocalDateTime end,
+                                                     Pageable pageable);
 
     @Query("""
             SELECT new com.tvscollections.backend.dto.FeedbackHistoryDto(

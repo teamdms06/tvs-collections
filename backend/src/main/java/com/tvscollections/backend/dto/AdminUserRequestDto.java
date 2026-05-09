@@ -9,4 +9,5 @@ public class AdminUserRequestDto {
     public String password;
     public Boolean isActive;
     public List<String> roles;
+    public List<String> accessProducts;
 }

@@ -20,7 +20,7 @@ public interface UserRepository extends JpaRepository<User, Long> {
                 select userRole
                 from UserRole userRole
                 where userRole.user = u
-                    and lower(userRole.role.name) = 'admin'
+                    and lower(userRole.role.name) in ('admin', 'role_admin')
             )
             """)
     Long countNotAdminRole();
@@ -33,7 +33,7 @@ public interface UserRepository extends JpaRepository<User, Long> {
                     select userRole
                     from UserRole userRole
                     where userRole.user = u
-                        and lower(userRole.role.name) = 'admin'
+                        and lower(userRole.role.name) in ('admin', 'role_admin')
                 )
             """)
     Long countByIsActiveTrueNotAdminRole();
@@ -46,7 +46,7 @@ public interface UserRepository extends JpaRepository<User, Long> {
                     select userRole
                     from UserRole userRole
                     where userRole.user = u
-                        and lower(userRole.role.name) = 'admin'
+                        and lower(userRole.role.name) in ('admin', 'role_admin')
                 )
             """)
     Boolean hasAdminRoleByUsername(@Param("username") String username);
@@ -69,7 +69,7 @@ public interface UserRepository extends JpaRepository<User, Long> {
                 select userRole
                 from UserRole userRole
                 where userRole.user = u
-                    and lower(userRole.role.name) = 'admin'
+                    and lower(userRole.role.name) in ('admin', 'role_admin')
             )
             order by u.createdAt desc
             """)

@@ -61,6 +61,16 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
     private boolean hasAdminRole(UserDetails userDetails) {
         return userDetails.getAuthorities().stream()
-                .anyMatch(authority -> "admin".equalsIgnoreCase(authority.getAuthority()));
+                .anyMatch(authority -> isAdminAuthority(authority.getAuthority()));
+    }
+
+    private boolean isAdminAuthority(String authority) {
+        if (authority == null) {
+            return false;
+        }
+
+        String normalizedAuthority = authority.trim();
+        return "admin".equalsIgnoreCase(normalizedAuthority)
+                || "role_admin".equalsIgnoreCase(normalizedAuthority);
     }
 }

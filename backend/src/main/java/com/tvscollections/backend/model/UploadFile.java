@@ -8,7 +8,13 @@ import java.util.HashSet;
 import java.util.Set;
 
 @Entity
-@Table(name = "upload_files")
+@Table(
+        name = "upload_files",
+        indexes = {
+                @Index(name = "idx_upload_files_status_uploaded_at", columnList = "status, uploaded_at"),
+                @Index(name = "idx_upload_files_product_uploaded_at", columnList = "product_id, uploaded_at")
+        }
+)
 public class UploadFile {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)

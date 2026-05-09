@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useMemo, useState } from 'react'
+import { Fragment, useEffect, useMemo, useState } from "react";
 import {
   exportFeedbackData,
   getAdminDashboard,
@@ -8,352 +8,395 @@ import {
   saveAdminUser,
   updateAdminUserAccess,
   updateUploadedFileAccess,
-} from '../api/admin'
-import { uploadLeadFile } from '../api/leads'
-import { productConfigs } from '../data/formConfigs'
+} from "../api/admin";
+import { uploadLeadFile } from "../api/leads";
+import { productConfigs } from "../data/formConfigs";
 
 const adminMenu = [
-  { key: 'dashboard', label: 'Dashboard' },
-  { key: 'report', label: 'Report' },
-  { key: 'upload', label: 'Upload Data' },
-  { key: 'export', label: 'Export Data' },
-  { key: 'users', label: 'User Manager' },
-]
+  { key: "dashboard", label: "Dashboard" },
+  { key: "report", label: "Report" },
+  { key: "upload", label: "Upload Data" },
+  { key: "export", label: "Export Data" },
+  { key: "users", label: "User Manager" },
+];
 
 function formatNumber(value) {
-  return Number(value || 0).toLocaleString('en-IN')
+  return Number(value || 0).toLocaleString("en-IN");
 }
 
 function formatDateTime(value) {
   if (!value) {
-    return '-'
+    return "-";
   }
 
-  return new Intl.DateTimeFormat('en-IN', {
-    dateStyle: 'medium',
-    timeStyle: 'short',
-  }).format(new Date(value))
+  return new Intl.DateTimeFormat("en-IN", {
+    dateStyle: "medium",
+    timeStyle: "short",
+  }).format(new Date(value));
 }
 
 function StatusBadge({ status, inactive }) {
-  const isInactive = inactive || status === 'inactive' || status === false
+  const isInactive = inactive || status === "inactive" || status === false;
   const label = isInactive
-    ? 'Inactive'
+    ? "Inactive"
     : status === true
-      ? 'Active'
-      : status || 'Active'
+      ? "Active"
+      : status || "Active";
 
   return (
-    <span className={isInactive ? 'status-badge status-badge--inactive' : 'status-badge'}>
+    <span
+      className={
+        isInactive ? "status-badge status-badge--inactive" : "status-badge"
+      }
+    >
       {label}
     </span>
-  )
+  );
 }
 
 const emptyUserForm = {
-  name: '',
-  username: '',
-  email: '',
-  password: '',
+  name: "",
+  username: "",
+  password: "",
   isActive: true,
-  roles: ['agent'],
-}
+  roles: ["agent"],
+};
 
 function AdminContent({ activeMenu, user }) {
   const accessibleProducts =
     user.accessProducts && user.accessProducts.length > 0
       ? user.accessProducts
-      : Object.keys(productConfigs)
-  const defaultProduct = accessibleProducts.includes('retail') ? 'retail' : accessibleProducts[0] || 'retail'
-  const [selectedProduct, setSelectedProduct] = useState(defaultProduct)
-  const [selectedFile, setSelectedFile] = useState(null)
-  const [uploadResult, setUploadResult] = useState(null)
-  const [uploadError, setUploadError] = useState('')
-  const [isUploading, setIsUploading] = useState(false)
-  const [dashboard, setDashboard] = useState(null)
-  const [dashboardError, setDashboardError] = useState('')
-  const [dashboardLoading, setDashboardLoading] = useState(false)
-  const [uploadedFiles, setUploadedFiles] = useState([])
-  const [uploadsError, setUploadsError] = useState('')
-  const [updatingUploadId, setUpdatingUploadId] = useState(null)
-  const [users, setUsers] = useState([])
-  const [userOptions, setUserOptions] = useState({ roles: [], products: [] })
-  const [usersError, setUsersError] = useState('')
-  const [userFormMode, setUserFormMode] = useState('closed')
-  const [editingUserId, setEditingUserId] = useState(null)
-  const [userForm, setUserForm] = useState(emptyUserForm)
-  const [savingUser, setSavingUser] = useState(false)
-  const [updatingUserId, setUpdatingUserId] = useState(null)
-  const [refreshKey, setRefreshKey] = useState(0)
-  const [exportStartDate, setExportStartDate] = useState('')
-  const [exportEndDate, setExportEndDate] = useState('')
-  const [exportError, setExportError] = useState('')
-  const [isExporting, setIsExporting] = useState(false)
+      : Object.keys(productConfigs);
+  const defaultProduct = accessibleProducts.includes("retail")
+    ? "retail"
+    : accessibleProducts[0] || "retail";
+  const [selectedProduct, setSelectedProduct] = useState(defaultProduct);
+  const [selectedFile, setSelectedFile] = useState(null);
+  const [uploadResult, setUploadResult] = useState(null);
+  const [uploadError, setUploadError] = useState("");
+  const [isUploading, setIsUploading] = useState(false);
+  const [dashboard, setDashboard] = useState(null);
+  const [dashboardError, setDashboardError] = useState("");
+  const [dashboardLoading, setDashboardLoading] = useState(false);
+  const [uploadedFiles, setUploadedFiles] = useState([]);
+  const [uploadsError, setUploadsError] = useState("");
+  const [updatingUploadId, setUpdatingUploadId] = useState(null);
+  const [users, setUsers] = useState([]);
+  const [userOptions, setUserOptions] = useState({ roles: [], products: [] });
+  const [usersError, setUsersError] = useState("");
+  const [userFormMode, setUserFormMode] = useState("closed");
+  const [editingUserId, setEditingUserId] = useState(null);
+  const [userForm, setUserForm] = useState(emptyUserForm);
+  const [savingUser, setSavingUser] = useState(false);
+  const [updatingUserId, setUpdatingUserId] = useState(null);
+  const [refreshKey, setRefreshKey] = useState(0);
+  const [exportStartDate, setExportStartDate] = useState("");
+  const [exportEndDate, setExportEndDate] = useState("");
+  const [exportError, setExportError] = useState("");
+  const [isExporting, setIsExporting] = useState(false);
 
   useEffect(() => {
-    let isActive = true
+    let isActive = true;
 
     const loadDashboard = async () => {
-      setDashboardLoading(true)
-      setDashboardError('')
+      setDashboardLoading(true);
+      setDashboardError("");
 
       try {
-        const data = await getAdminDashboard()
+        const data = await getAdminDashboard();
         if (isActive) {
-          setDashboard(data)
+          setDashboard(data);
         }
       } catch (error) {
         if (isActive) {
-          setDashboardError(error.message || 'Could not load dashboard data.')
+          setDashboardError(error.message || "Could not load dashboard data.");
         }
       } finally {
         if (isActive) {
-          setDashboardLoading(false)
+          setDashboardLoading(false);
         }
       }
-    }
+    };
 
-    loadDashboard()
-    const interval = window.setInterval(loadDashboard, 30000)
+    loadDashboard();
+    const interval = window.setInterval(loadDashboard, 30000);
 
     return () => {
-      isActive = false
-      window.clearInterval(interval)
-    }
-  }, [refreshKey])
+      isActive = false;
+      window.clearInterval(interval);
+    };
+  }, [refreshKey]);
 
   useEffect(() => {
-    let isActive = true
+    let isActive = true;
 
     const loadUsers = async () => {
-      setUsersError('')
+      setUsersError("");
 
       try {
         const [usersData, optionsData] = await Promise.all([
           getAdminUsers(),
           getAdminUserOptions(),
-        ])
+        ]);
 
         if (isActive) {
-          setUsers(Array.isArray(usersData) ? usersData : [])
+          setUsers(Array.isArray(usersData) ? usersData : []);
           setUserOptions({
             roles: Array.isArray(optionsData?.roles) ? optionsData.roles : [],
-            products: Array.isArray(optionsData?.products) ? optionsData.products : [],
-          })
+            products: Array.isArray(optionsData?.products)
+              ? optionsData.products
+              : [],
+          });
         }
       } catch (error) {
         if (isActive) {
-          setUsersError(error.message || 'Could not load users.')
+          setUsersError(error.message || "Could not load users.");
         }
       }
-    }
+    };
 
-    loadUsers()
+    loadUsers();
 
     return () => {
-      isActive = false
-    }
-  }, [refreshKey])
+      isActive = false;
+    };
+  }, [refreshKey]);
 
   useEffect(() => {
-    let isActive = true
+    let isActive = true;
 
     const loadUploadedFiles = async () => {
-      setUploadsError('')
+      setUploadsError("");
 
       try {
-        const data = await getUploadedFiles()
+        const data = await getUploadedFiles();
         if (isActive) {
-          setUploadedFiles(Array.isArray(data) ? data : [])
+          setUploadedFiles(Array.isArray(data) ? data : []);
         }
       } catch (error) {
         if (isActive) {
-          setUploadsError(error.message || 'Could not load uploaded files.')
+          setUploadsError(error.message || "Could not load uploaded files.");
         }
       }
-    }
+    };
 
-    loadUploadedFiles()
+    loadUploadedFiles();
 
     return () => {
-      isActive = false
-    }
-  }, [refreshKey])
+      isActive = false;
+    };
+  }, [refreshKey]);
 
   const statCards = useMemo(
     () => [
-      { label: 'Uploaded files', value: formatNumber(dashboard?.uploadedFiles) },
-      { label: 'Total leads', value: formatNumber(dashboard?.totalLeads) },
-      { label: 'Feedback today', value: formatNumber(dashboard?.feedbackToday) },
-      { label: 'Active users', value: formatNumber(dashboard?.activeUsers) },
-      { label: 'Total feedback', value: formatNumber(dashboard?.totalFeedback) },
-      { label: 'Users enabled', value: `${formatNumber(dashboard?.enabledUsers)} / ${formatNumber(dashboard?.totalUsers)}` },
-      { label: 'Uploads today', value: formatNumber(dashboard?.uploadedToday) },
-      { label: 'Last refresh', value: dashboard?.generatedAt ? formatDateTime(dashboard.generatedAt) : '-' },
+      {
+        label: "Uploaded files",
+        value: formatNumber(dashboard?.uploadedFiles),
+      },
+      { label: "Total leads", value: formatNumber(dashboard?.totalLeads) },
+      {
+        label: "Feedback today",
+        value: formatNumber(dashboard?.feedbackToday),
+      },
+      { label: "Active users", value: formatNumber(dashboard?.activeUsers) },
+      {
+        label: "Total feedback",
+        value: formatNumber(dashboard?.totalFeedback),
+      },
+      {
+        label: "Users enabled",
+        value: `${formatNumber(dashboard?.enabledUsers)} / ${formatNumber(dashboard?.totalUsers)}`,
+      },
+      { label: "Uploads today", value: formatNumber(dashboard?.uploadedToday) },
+      {
+        label: "Last refresh",
+        value: dashboard?.generatedAt
+          ? formatDateTime(dashboard.generatedAt)
+          : "-",
+      },
     ],
     [dashboard],
-  )
+  );
 
   const handleUpload = async (event) => {
-    event.preventDefault()
+    event.preventDefault();
 
     if (!selectedFile) {
-      setUploadError('Please select an Excel file.')
-      return
+      setUploadError("Please select an Excel file.");
+      return;
     }
 
-    setIsUploading(true)
-    setUploadError('')
-    setUploadResult(null)
+    setIsUploading(true);
+    setUploadError("");
+    setUploadResult(null);
 
     try {
-      const result = await uploadLeadFile(selectedFile, selectedProduct)
-      setUploadResult(result)
-      setSelectedFile(null)
-      setRefreshKey((current) => current + 1)
-      event.currentTarget.reset()
+      const result = await uploadLeadFile(selectedFile, selectedProduct);
+      setUploadResult(result);
+      setSelectedFile(null);
+      setRefreshKey((current) => current + 1);
+      event.currentTarget.reset();
     } catch (error) {
-      setUploadError(error.message || 'Upload failed.')
+      setUploadError(error.message || "Upload failed.");
     } finally {
-      setIsUploading(false)
+      setIsUploading(false);
     }
-  }
+  };
 
   const changeUploadAccess = async (uploadId, isActive) => {
-    setUpdatingUploadId(uploadId)
-    setUploadsError('')
+    setUpdatingUploadId(uploadId);
+    setUploadsError("");
 
     try {
-      const updatedUpload = await updateUploadedFileAccess(uploadId, isActive)
+      const updatedUpload = await updateUploadedFileAccess(uploadId, isActive);
       setUploadedFiles((current) =>
-        current.map((upload) => (upload.id === uploadId ? updatedUpload : upload)),
-      )
-      setRefreshKey((current) => current + 1)
+        current.map((upload) =>
+          upload.id === uploadId ? updatedUpload : upload,
+        ),
+      );
+      setRefreshKey((current) => current + 1);
     } catch (error) {
-      setUploadsError(error.message || 'Could not update uploaded file access.')
+      setUploadsError(
+        error.message || "Could not update uploaded file access.",
+      );
     } finally {
-      setUpdatingUploadId(null)
+      setUpdatingUploadId(null);
     }
-  }
+  };
 
   const openAddUserForm = () => {
-    setUserFormMode('add')
-    setEditingUserId(null)
+    setUserFormMode("add");
+    setEditingUserId(null);
     setUserForm({
       ...emptyUserForm,
-      roles: userOptions.roles.includes('agent') ? ['agent'] : [userOptions.roles[0] || 'agent'],
-    })
-    setUsersError('')
-  }
+      roles: userOptions.roles.includes("agent")
+        ? ["agent"]
+        : [userOptions.roles[0] || "agent"],
+    });
+    setUsersError("");
+  };
 
   const openEditUserForm = (selectedUser) => {
-    setUserFormMode('edit')
-    setEditingUserId(selectedUser.id)
+    setUserFormMode("edit");
+    setEditingUserId(selectedUser.id);
     setUserForm({
-      name: selectedUser.name || '',
-      username: selectedUser.username || '',
-      email: selectedUser.email || '',
-      password: '',
+      name: selectedUser.name || "",
+      username: selectedUser.username || "",
+      password: "",
       isActive: selectedUser.isActive !== false,
-      roles: selectedUser.roles?.length ? selectedUser.roles : ['agent'],
-    })
-    setUsersError('')
-  }
+      roles: selectedUser.roles?.length ? selectedUser.roles : ["agent"],
+    });
+    setUsersError("");
+  };
 
   const closeUserForm = () => {
-    setUserFormMode('closed')
-    setEditingUserId(null)
-    setUserForm(emptyUserForm)
-  }
+    setUserFormMode("closed");
+    setEditingUserId(null);
+    setUserForm(emptyUserForm);
+  };
 
   const updateUserForm = (field, value) => {
-    setUserForm((current) => ({ ...current, [field]: value }))
-  }
+    setUserForm((current) => ({ ...current, [field]: value }));
+  };
 
   const submitUserForm = async (event) => {
-    event.preventDefault()
-    setSavingUser(true)
-    setUsersError('')
+    event.preventDefault();
+    setSavingUser(true);
+    setUsersError("");
 
     try {
       const payload = {
-        ...userForm,
+        name: userForm.name,
+        username: userForm.username,
         password: userForm.password.trim(),
+        isActive: userForm.isActive,
         roles: userForm.roles.filter(Boolean),
-      }
-      const savedUser = await saveAdminUser(payload, userFormMode === 'edit' ? editingUserId : null)
+      };
+      const savedUser = await saveAdminUser(
+        payload,
+        userFormMode === "edit" ? editingUserId : null,
+      );
 
       setUsers((current) => {
-        if (userFormMode === 'edit') {
-          return current.map((item) => (item.id === savedUser.id ? savedUser : item))
+        if (userFormMode === "edit") {
+          return current.map((item) =>
+            item.id === savedUser.id ? savedUser : item,
+          );
         }
 
-        return [savedUser, ...current]
-      })
-      closeUserForm()
-      setRefreshKey((current) => current + 1)
+        return [savedUser, ...current];
+      });
+      closeUserForm();
+      setRefreshKey((current) => current + 1);
     } catch (error) {
-      setUsersError(error.message || 'Could not save user.')
+      setUsersError(error.message || "Could not save user.");
     } finally {
-      setSavingUser(false)
+      setSavingUser(false);
     }
-  }
+  };
 
   const changeUserAccess = async (userId, isActive) => {
-    setUpdatingUserId(userId)
-    setUsersError('')
+    setUpdatingUserId(userId);
+    setUsersError("");
 
     try {
-      const updatedUser = await updateAdminUserAccess(userId, isActive)
+      const updatedUser = await updateAdminUserAccess(userId, isActive);
       setUsers((current) =>
         current.map((item) => (item.id === userId ? updatedUser : item)),
-      )
-      setRefreshKey((current) => current + 1)
+      );
+      setRefreshKey((current) => current + 1);
     } catch (error) {
-      setUsersError(error.message || 'Could not update user status.')
+      setUsersError(error.message || "Could not update user status.");
     } finally {
-      setUpdatingUserId(null)
+      setUpdatingUserId(null);
     }
-  }
+  };
 
   const handleExport = async (event) => {
-    event.preventDefault()
+    event.preventDefault();
 
     if (!exportStartDate || !exportEndDate) {
-      setExportError('Select both start date and end date.')
-      return
+      setExportError("Select both start date and end date.");
+      return;
     }
 
     if (exportEndDate < exportStartDate) {
-      setExportError('End date must be after start date.')
-      return
+      setExportError("End date must be after start date.");
+      return;
     }
 
-    setIsExporting(true)
-    setExportError('')
+    setIsExporting(true);
+    setExportError("");
 
     try {
-      const { blob, fileName } = await exportFeedbackData(exportStartDate, exportEndDate)
-      const url = window.URL.createObjectURL(blob)
-      const link = document.createElement('a')
-      link.href = url
-      link.download = fileName
-      document.body.appendChild(link)
-      link.click()
-      link.remove()
-      window.URL.revokeObjectURL(url)
+      const { blob, fileName } = await exportFeedbackData(
+        exportStartDate,
+        exportEndDate,
+      );
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = fileName;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
     } catch (error) {
-      setExportError(error.message || 'Could not export feedback data.')
+      setExportError(error.message || "Could not export feedback data.");
     } finally {
-      setIsExporting(false)
+      setIsExporting(false);
     }
-  }
+  };
 
-  if (activeMenu === 'dashboard') {
+  if (activeMenu === "dashboard") {
     return (
       <div className="admin-dashboard-stack">
-        {dashboardError && <p className="notice notice--error">{dashboardError}</p>}
-        {dashboardLoading && !dashboard && <p className="notice">Loading live dashboard data...</p>}
+        {dashboardError && (
+          <p className="notice notice--error">{dashboardError}</p>
+        )}
+        {dashboardLoading && !dashboard && (
+          <p className="notice">Loading live dashboard data...</p>
+        )}
 
         <section className="admin-grid">
           {statCards.map((card) => (
@@ -373,8 +416,8 @@ function AdminContent({ activeMenu, user }) {
               <span>Leads</span>
               {(dashboard?.productCounts || []).map((product) => (
                 <Fragment key={product.productCode || product.productName}>
-                  <strong>{product.productName || '-'}</strong>
-                  <span>{product.productCode || '-'}</span>
+                  <strong>{product.productName || "-"}</strong>
+                  <span>{product.productCode || "-"}</span>
                   <span>{formatNumber(product.leads)}</span>
                 </Fragment>
               ))}
@@ -407,19 +450,25 @@ function AdminContent({ activeMenu, user }) {
             {(dashboard?.recentUploads || []).map((upload) => (
               <Fragment key={upload.id}>
                 <strong>{upload.fileName}</strong>
-                <span>{upload.productName || upload.productCode || '-'}</span>
-                <span>{formatNumber(upload.validRecords)} / {formatNumber(upload.totalRecords)}</span>
-                <StatusBadge status={upload.status || '-'} inactive={upload.status === 'inactive'} />
+                <span>{upload.productName || upload.productCode || "-"}</span>
+                <span>
+                  {formatNumber(upload.validRecords)} /{" "}
+                  {formatNumber(upload.totalRecords)}
+                </span>
+                <StatusBadge
+                  status={upload.status || "-"}
+                  inactive={upload.status === "inactive"}
+                />
                 <span>{formatDateTime(upload.uploadedAt)}</span>
               </Fragment>
             ))}
           </div>
         </section>
       </div>
-    )
+    );
   }
 
-  if (activeMenu === 'upload') {
+  if (activeMenu === "upload") {
     return (
       <div className="admin-dashboard-stack">
         <section className="admin-card admin-card--wide">
@@ -444,26 +493,37 @@ function AdminContent({ activeMenu, user }) {
               <input
                 accept=".xlsx,.xls"
                 onChange={(event) => {
-                  setSelectedFile(event.target.files?.[0] || null)
-                  setUploadError('')
-                  setUploadResult(null)
+                  setSelectedFile(event.target.files?.[0] || null);
+                  setUploadError("");
+                  setUploadResult(null);
                 }}
                 type="file"
               />
-              <strong>{selectedFile ? selectedFile.name : 'Excel file with Retail format columns'}</strong>
+              <strong>
+                {selectedFile
+                  ? selectedFile.name
+                  : "Excel file with Retail format columns"}
+              </strong>
             </label>
 
-            <button className="primary-action" disabled={isUploading} type="submit">
-              {isUploading ? 'Uploading...' : 'Upload to Database'}
+            <button
+              className="primary-action"
+              disabled={isUploading}
+              type="submit"
+            >
+              {isUploading ? "Uploading..." : "Upload to Database"}
             </button>
 
-            {uploadError && <p className="notice notice--error">{uploadError}</p>}
+            {uploadError && (
+              <p className="notice notice--error">{uploadError}</p>
+            )}
             {uploadResult && (
               <div className="upload-summary">
                 <span>Upload completed</span>
                 <strong>{uploadResult.validRecords} records saved</strong>
                 <p>
-                  File ID {uploadResult.uploadFileId} - Total {uploadResult.totalRecords} - Failed{' '}
+                  File ID {uploadResult.uploadFileId} - Total{" "}
+                  {uploadResult.totalRecords} - Failed{" "}
                   {uploadResult.failedRecords}
                 </p>
               </div>
@@ -473,7 +533,9 @@ function AdminContent({ activeMenu, user }) {
 
         <section className="admin-card admin-card--wide">
           <h2>Previously Uploaded Files</h2>
-          {uploadsError && <p className="notice notice--error">{uploadsError}</p>}
+          {uploadsError && (
+            <p className="notice notice--error">{uploadsError}</p>
+          )}
           <div className="admin-table admin-table--upload-manager">
             <span>File</span>
             <span>Product</span>
@@ -482,37 +544,51 @@ function AdminContent({ activeMenu, user }) {
             <span>Uploaded</span>
             <span>Action</span>
             {uploadedFiles.length === 0 && (
-              <strong className="admin-table-empty">No uploaded files found.</strong>
+              <strong className="admin-table-empty">
+                No uploaded files found.
+              </strong>
             )}
             {uploadedFiles.map((upload) => {
-              const isInactive = upload.status === 'inactive'
-              const isUpdating = updatingUploadId === upload.id
+              const isInactive = upload.status === "inactive";
+              const isUpdating = updatingUploadId === upload.id;
 
               return (
                 <Fragment key={upload.id}>
                   <strong>{upload.fileName}</strong>
-                  <span>{upload.productName || upload.productCode || '-'}</span>
-                  <span>{formatNumber(upload.validRecords)} / {formatNumber(upload.totalRecords)}</span>
-                  <StatusBadge status={upload.status || '-'} inactive={isInactive} />
+                  <span>{upload.productName || upload.productCode || "-"}</span>
+                  <span>
+                    {formatNumber(upload.validRecords)} /{" "}
+                    {formatNumber(upload.totalRecords)}
+                  </span>
+                  <StatusBadge
+                    status={upload.status || "-"}
+                    inactive={isInactive}
+                  />
                   <span>{formatDateTime(upload.uploadedAt)}</span>
                   <button
-                    className={isInactive ? 'secondary-action' : 'danger-action'}
+                    className={
+                      isInactive ? "secondary-action" : "danger-action"
+                    }
                     disabled={isUpdating}
                     onClick={() => changeUploadAccess(upload.id, isInactive)}
                     type="button"
                   >
-                    {isUpdating ? 'Updating...' : isInactive ? 'Activate' : 'Deactivate'}
+                    {isUpdating
+                      ? "Updating..."
+                      : isInactive
+                        ? "Activate"
+                        : "Deactivate"}
                   </button>
                 </Fragment>
-              )
+              );
             })}
           </div>
         </section>
       </div>
-    )
+    );
   }
 
-  if (activeMenu === 'export') {
+  if (activeMenu === "export") {
     return (
       <section className="admin-card admin-card--wide">
         <h2>Export Data</h2>
@@ -521,8 +597,8 @@ function AdminContent({ activeMenu, user }) {
             <span>Start date</span>
             <input
               onChange={(event) => {
-                setExportStartDate(event.target.value)
-                setExportError('')
+                setExportStartDate(event.target.value);
+                setExportError("");
               }}
               required
               type="date"
@@ -533,42 +609,52 @@ function AdminContent({ activeMenu, user }) {
             <span>End date</span>
             <input
               onChange={(event) => {
-                setExportEndDate(event.target.value)
-                setExportError('')
+                setExportEndDate(event.target.value);
+                setExportError("");
               }}
               required
               type="date"
               value={exportEndDate}
             />
           </label>
-          <button className="primary-action" disabled={isExporting} type="submit">
-            {isExporting ? 'Exporting...' : 'Export Feedback Excel'}
+          <button
+            className="primary-action"
+            disabled={isExporting}
+            type="submit"
+          >
+            {isExporting ? "Exporting..." : "Export Feedback Excel"}
           </button>
           {exportError && <p className="notice notice--error">{exportError}</p>}
         </form>
       </section>
-    )
+    );
   }
 
-  if (activeMenu === 'users') {
+  if (activeMenu === "users") {
     return (
       <div className="admin-dashboard-stack">
         <section className="admin-card admin-card--wide">
           <div className="admin-section-heading">
             <h2>User Manager</h2>
-            <button className="primary-action" onClick={openAddUserForm} type="button">
+            <button
+              className="primary-action"
+              onClick={openAddUserForm}
+              type="button"
+            >
               Add New User
             </button>
           </div>
 
           {usersError && <p className="notice notice--error">{usersError}</p>}
 
-          {userFormMode !== 'closed' && (
+          {userFormMode !== "closed" && (
             <form className="admin-user-form" onSubmit={submitUserForm}>
               <label className="form-field">
                 <span>Name</span>
                 <input
-                  onChange={(event) => updateUserForm('name', event.target.value)}
+                  onChange={(event) =>
+                    updateUserForm("name", event.target.value)
+                  }
                   required
                   value={userForm.name}
                 />
@@ -576,26 +662,27 @@ function AdminContent({ activeMenu, user }) {
               <label className="form-field">
                 <span>Username</span>
                 <input
-                  onChange={(event) => updateUserForm('username', event.target.value)}
+                  onChange={(event) =>
+                    updateUserForm("username", event.target.value)
+                  }
                   required
                   value={userForm.username}
                 />
               </label>
               <label className="form-field">
-                <span>Email</span>
+                <span>
+                  {userFormMode === "edit" ? "New Password" : "Password"}
+                </span>
                 <input
-                  onChange={(event) => updateUserForm('email', event.target.value)}
-                  required
-                  type="email"
-                  value={userForm.email}
-                />
-              </label>
-              <label className="form-field">
-                <span>{userFormMode === 'edit' ? 'New Password' : 'Password'}</span>
-                <input
-                  onChange={(event) => updateUserForm('password', event.target.value)}
-                  placeholder={userFormMode === 'edit' ? 'Leave blank to keep current password' : ''}
-                  required={userFormMode === 'add'}
+                  onChange={(event) =>
+                    updateUserForm("password", event.target.value)
+                  }
+                  placeholder={
+                    userFormMode === "edit"
+                      ? "Leave blank to keep current password"
+                      : ""
+                  }
+                  required={userFormMode === "add"}
                   type="password"
                   value={userForm.password}
                 />
@@ -603,12 +690,17 @@ function AdminContent({ activeMenu, user }) {
               <label className="form-field">
                 <span>Role</span>
                 <select
-                  onChange={(event) => updateUserForm('roles', [event.target.value])}
+                  onChange={(event) =>
+                    updateUserForm("roles", [event.target.value])
+                  }
                   required
-                  value={userForm.roles[0] || ''}
+                  value={userForm.roles[0] || ""}
                 >
                   <option value="">Select role</option>
-                  {(userOptions.roles.length ? userOptions.roles : ['admin', 'agent']).map((role) => (
+                  {(userOptions.roles.length
+                    ? userOptions.roles
+                    : ["admin", "agent"]
+                  ).map((role) => (
                     <option key={role} value={role}>
                       {role}
                     </option>
@@ -618,19 +710,33 @@ function AdminContent({ activeMenu, user }) {
               <label className="form-field">
                 <span>Status</span>
                 <select
-                  onChange={(event) => updateUserForm('isActive', event.target.value === 'active')}
-                  value={userForm.isActive ? 'active' : 'inactive'}
+                  onChange={(event) =>
+                    updateUserForm("isActive", event.target.value === "active")
+                  }
+                  value={userForm.isActive ? "active" : "inactive"}
                 >
                   <option value="active">Active</option>
                   <option value="inactive">Inactive</option>
                 </select>
               </label>
               <div className="form-actions admin-user-form-actions">
-                <button className="secondary-action" onClick={closeUserForm} type="button">
+                <button
+                  className="secondary-action"
+                  onClick={closeUserForm}
+                  type="button"
+                >
                   Cancel
                 </button>
-                <button className="primary-action" disabled={savingUser} type="submit">
-                  {savingUser ? 'Saving...' : userFormMode === 'edit' ? 'Update User' : 'Create User'}
+                <button
+                  className="primary-action"
+                  disabled={savingUser}
+                  type="submit"
+                >
+                  {savingUser
+                    ? "Saving..."
+                    : userFormMode === "edit"
+                      ? "Update User"
+                      : "Create User"}
                 </button>
               </div>
             </form>
@@ -647,15 +753,15 @@ function AdminContent({ activeMenu, user }) {
               <strong className="admin-table-empty">No users found.</strong>
             )}
             {users.map((managedUser) => {
-              const isActiveUser = managedUser.isActive !== false
-              const isUpdating = updatingUserId === managedUser.id
+              const isActiveUser = managedUser.isActive !== false;
+              const isUpdating = updatingUserId === managedUser.id;
 
               return (
                 <Fragment key={managedUser.id}>
-                  <strong>{managedUser.name || '-'}</strong>
-                  <span>{managedUser.username || '-'}</span>
-                  <span>{managedUser.roles?.join(', ') || '-'}</span>
-                  <span>{managedUser.accessProducts?.join(', ') || '-'}</span>
+                  <strong>{managedUser.name || "-"}</strong>
+                  <span>{managedUser.username || "-"}</span>
+                  <span>{managedUser.roles?.join(", ") || "-"}</span>
+                  <span>{managedUser.accessProducts?.join(", ") || "-"}</span>
                   <StatusBadge status={isActiveUser} inactive={!isActiveUser} />
                   <span className="admin-row-actions">
                     <button
@@ -666,21 +772,29 @@ function AdminContent({ activeMenu, user }) {
                       Edit
                     </button>
                     <button
-                      className={isActiveUser ? 'danger-action' : 'secondary-action'}
+                      className={
+                        isActiveUser ? "danger-action" : "secondary-action"
+                      }
                       disabled={isUpdating}
-                      onClick={() => changeUserAccess(managedUser.id, !isActiveUser)}
+                      onClick={() =>
+                        changeUserAccess(managedUser.id, !isActiveUser)
+                      }
                       type="button"
                     >
-                      {isUpdating ? 'Updating...' : isActiveUser ? 'Deactivate' : 'Activate'}
+                      {isUpdating
+                        ? "Updating..."
+                        : isActiveUser
+                          ? "Deactivate"
+                          : "Activate"}
                     </button>
                   </span>
                 </Fragment>
-              )
+              );
             })}
           </div>
         </section>
       </div>
-    )
+    );
   }
 
   return (
@@ -688,11 +802,11 @@ function AdminContent({ activeMenu, user }) {
       <h2>Report</h2>
       <p>Report filters and collection summaries will load here.</p>
     </section>
-  )
+  );
 }
 
 export default function AdminPage({ onLogout, user }) {
-  const [activeMenu, setActiveMenu] = useState('dashboard')
+  const [activeMenu, setActiveMenu] = useState("dashboard");
 
   return (
     <main className="workspace-shell admin-workspace">
@@ -707,24 +821,30 @@ export default function AdminPage({ onLogout, user }) {
           </div>
 
           <nav className="admin-menu">
-          {adminMenu.map((item) => (
-            <button
-              className={
-                item.key === activeMenu ? 'admin-menu-item admin-menu-item--active' : 'admin-menu-item'
-              }
-              key={item.key}
-              onClick={() => setActiveMenu(item.key)}
-              type="button"
-            >
-              {item.label}
-            </button>
-          ))}
+            {adminMenu.map((item) => (
+              <button
+                className={
+                  item.key === activeMenu
+                    ? "admin-menu-item admin-menu-item--active"
+                    : "admin-menu-item"
+                }
+                key={item.key}
+                onClick={() => setActiveMenu(item.key)}
+                type="button"
+              >
+                {item.label}
+              </button>
+            ))}
           </nav>
 
           <div className="admin-sidebar-footer">
             <strong>{user.name}</strong>
-            <span>{user.roles?.join(', ') || 'Administrator'}</span>
-            <button className="secondary-action" onClick={onLogout} type="button">
+            <span>{user.roles?.join(", ") || "Administrator"}</span>
+            <button
+              className="secondary-action"
+              onClick={onLogout}
+              type="button"
+            >
               Logout
             </button>
           </div>
@@ -734,7 +854,10 @@ export default function AdminPage({ onLogout, user }) {
           <header className="admin-content-header">
             <div>
               <p className="eyebrow">Admin workspace</p>
-              <h1>{adminMenu.find((item) => item.key === activeMenu)?.label || 'Dashboard'}</h1>
+              <h1>
+                {adminMenu.find((item) => item.key === activeMenu)?.label ||
+                  "Dashboard"}
+              </h1>
             </div>
             <span>{user.name}</span>
           </header>
@@ -742,5 +865,5 @@ export default function AdminPage({ onLogout, user }) {
         </div>
       </section>
     </main>
-  )
+  );
 }

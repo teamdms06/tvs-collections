@@ -25,6 +25,7 @@ import org.apache.poi.ss.usermodel.Row;
 import org.apache.poi.ss.usermodel.Sheet;
 import org.apache.poi.ss.usermodel.Workbook;
 import org.apache.poi.ss.usermodel.WorkbookFactory;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
@@ -34,7 +35,10 @@ import org.springframework.web.multipart.MultipartFile;
 import java.io.IOException;
 import java.io.InputStream;
 import java.math.BigDecimal;
+import java.sql.Timestamp;
+import java.sql.Types;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
@@ -46,6 +50,7 @@ import java.util.Map;
 
 @Service
 public class UploadFileDataService {
+    private static final int INSERT_BATCH_SIZE = 1000;
 
     private final UploadFileDataRepository uploadFileDataRepository;
     private final UploadFileRepository uploadFileRepository;
@@ -53,25 +58,45 @@ public class UploadFileDataService {
     private final UserRepository userRepository;
     private final FeedbackRepository feedbackRepository;
     private final ObjectMapper objectMapper;
+    private final JdbcTemplate jdbcTemplate;
 
     public UploadFileDataService(UploadFileDataRepository uploadFileDataRepository,
                                  UploadFileRepository uploadFileRepository,
                                  ProductRepository productRepository,
                                  UserRepository userRepository,
                                  FeedbackRepository feedbackRepository,
-                                 ObjectMapper objectMapper) {
+                                 ObjectMapper objectMapper,
+                                 JdbcTemplate jdbcTemplate) {
         this.uploadFileDataRepository = uploadFileDataRepository;
         this.uploadFileRepository = uploadFileRepository;
         this.productRepository = productRepository;
         this.userRepository = userRepository;
         this.feedbackRepository = feedbackRepository;
         this.objectMapper = objectMapper;
+        this.jdbcTemplate = jdbcTemplate;
     }
 
     public List<LeadResponseDto> searchLeads(String productCode, String query) {
-        return uploadFileDataRepository.searchByProductAndQuery(productCode, query, UploadStatus.inactive).stream()
+        String normalizedQuery = query == null ? "" : query.trim();
+        if (isFullMobileNumber(normalizedQuery)) {
+            List<UploadFileData> exactMobileMatches = uploadFileDataRepository.findLatestByProductAndExactMobileNumber(
+                            productCode,
+                            normalizedQuery,
+                            UploadStatus.inactive
+                    );
+
+            if (!exactMobileMatches.isEmpty()) {
+                return List.of(new LeadResponseDto(exactMobileMatches.get(0), List.of()));
+            }
+        }
+
+        return uploadFileDataRepository.searchByProductAndQuery(productCode, normalizedQuery, UploadStatus.inactive).stream()
                 .map(lead -> new LeadResponseDto(lead, List.of()))
                 .toList();
+    }
+
+    private boolean isFullMobileNumber(String query) {
+        return query.matches("\\d{10,}");
     }
 
     public LeadResponseDto getLeadById(String productCode, Long id) {
@@ -125,7 +150,7 @@ public class UploadFileDataService {
         uploadFile.failedRecords = 0;
         uploadFile.status = UploadStatus.completed;
 
-        uploadFileDataRepository.saveAll(rows);
+        batchInsertRows(rows);
         UploadFile savedUpload = uploadFileRepository.save(uploadFile);
 
         return new UploadResultDto(
@@ -404,5 +429,108 @@ public class UploadFileDataService {
         } catch (JsonProcessingException error) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Could not serialize row data", error);
         }
+    }
+
+    private void batchInsertRows(List<UploadFileData> rows) {
+        if (rows.isEmpty()) {
+            return;
+        }
+
+        LocalDateTime now = LocalDateTime.now();
+        String sql = """
+                INSERT INTO upload_file_data (
+                    upload_file_id,
+                    product_id,
+                    list_id,
+                    agreement_number,
+                    uid,
+                    customer_name,
+                    mobile_number,
+                    address,
+                    city,
+                    pincode,
+                    dealer_code,
+                    dealer_name,
+                    portfolio,
+                    amount_financed,
+                    first_emi_date,
+                    last_emi_date,
+                    bounce_reason,
+                    tenor,
+                    emi,
+                    other_details,
+                    final_opening_bkt_status,
+                    model,
+                    dpd_del_string,
+                    branch_name,
+                    region,
+                    zone,
+                    language,
+                    total_overdue,
+                    cbc_charges,
+                    askable,
+                    settlement_month,
+                    fce_name,
+                    fce_number,
+                    tcm_name,
+                    tcm_number,
+                    acm_name,
+                    acm_number,
+                    best_dispo_internal,
+                    latest_feedback_id,
+                    raw_data,
+                    created_at,
+                    updated_at
+                ) VALUES (
+                    ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                    ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+                )
+                """;
+
+        jdbcTemplate.batchUpdate(sql, rows, INSERT_BATCH_SIZE, (statement, row) -> {
+            int index = 1;
+            statement.setLong(index++, row.uploadFile.id);
+            statement.setLong(index++, row.product.id);
+            statement.setString(index++, row.listId);
+            statement.setString(index++, row.agreementNumber);
+            statement.setString(index++, row.uid);
+            statement.setString(index++, row.customerName);
+            statement.setString(index++, row.mobileNumber);
+            statement.setString(index++, row.address);
+            statement.setString(index++, row.city);
+            statement.setString(index++, row.pincode);
+            statement.setString(index++, row.dealerCode);
+            statement.setString(index++, row.dealerName);
+            statement.setString(index++, row.portfolio);
+            statement.setObject(index++, row.amountFinanced);
+            statement.setString(index++, row.firstEmiDate);
+            statement.setString(index++, row.lastEmiDate);
+            statement.setString(index++, row.bounceReason);
+            statement.setObject(index++, row.tenor);
+            statement.setObject(index++, row.emi);
+            statement.setString(index++, row.otherDetails);
+            statement.setString(index++, row.finalOpeningBktStatus);
+            statement.setString(index++, row.model);
+            statement.setString(index++, row.dpdDelString);
+            statement.setString(index++, row.branchName);
+            statement.setString(index++, row.region);
+            statement.setString(index++, row.zone);
+            statement.setString(index++, row.language);
+            statement.setObject(index++, row.totalOverdue);
+            statement.setObject(index++, row.cbcCharges);
+            statement.setObject(index++, row.askable);
+            statement.setString(index++, row.settlementMonth);
+            statement.setString(index++, row.fceName);
+            statement.setString(index++, row.fceNumber);
+            statement.setString(index++, row.tcmName);
+            statement.setString(index++, row.tcmNumber);
+            statement.setString(index++, row.acmName);
+            statement.setString(index++, row.acmNumber);
+            statement.setString(index++, row.bestDispoInternal);
+            statement.setNull(index++, Types.BIGINT);
+            statement.setString(index++, row.rawData);
+            statement.setTimestamp(index++, Timestamp.valueOf(now));
+            statement.setTimestamp(index, Timestamp.valueOf(now));
+        });
     }
 }

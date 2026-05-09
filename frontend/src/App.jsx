@@ -5,6 +5,7 @@ import CommercialPage from "./pages/CommercialPage";
 import ConsumerDurablePage from "./pages/ConsumerDurablePage";
 import LoginPage from "./pages/LoginPage";
 import RetailPage from "./pages/RetailPage";
+import { API_BASE_URL } from "./api/config";
 
 const agentPages = {
   consumer: ConsumerDurablePage,
@@ -37,7 +38,7 @@ function App() {
     const token = localStorage.getItem("authToken");
 
     if (token) {
-      fetch("http://localhost:4000/api/auth/logout", {
+      fetch(`${API_BASE_URL}/auth/logout`, {
         method: "POST",
         headers: {
           Authorization: `Bearer ${token}`,
@@ -107,10 +108,10 @@ function App() {
   // Map roles array to single role (use first role for now)
   const userRole =
     currentUser.roles && currentUser.roles.length > 0
-      ? currentUser.roles[0]
+      ? currentUser.roles[0]?.trim().toLowerCase()
       : "agent";
 
-  if (userRole === "admin") {
+  if (userRole === "admin" || userRole === "role_admin") {
     return <AdminPage onLogout={logout} user={currentUser} />;
   }
 

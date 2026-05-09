@@ -4,13 +4,15 @@ import com.tvscollections.backend.dto.AdminUserDto;
 import com.tvscollections.backend.dto.AdminUserOptionsDto;
 import com.tvscollections.backend.dto.AdminUserRequestDto;
 import com.tvscollections.backend.dto.ProductSummaryDto;
+import com.tvscollections.backend.model.Product;
 import com.tvscollections.backend.model.Role;
+import com.tvscollections.backend.model.RoleProductAccess;
 import com.tvscollections.backend.model.User;
 import com.tvscollections.backend.model.UserRole;
 import com.tvscollections.backend.repository.ProductRepository;
 import com.tvscollections.backend.repository.RoleRepository;
+import com.tvscollections.backend.repository.RoleProductAccessRepository;
 import com.tvscollections.backend.repository.UserRepository;
-import com.tvscollections.backend.repository.UserRoleRepository;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -30,20 +32,20 @@ public class AdminUserService {
     private final ProductRepository productRepository;
     private final ProductAccessService productAccessService;
     private final PasswordEncoder passwordEncoder;
-    private final UserRoleRepository userRoleRepository;
+    private final RoleProductAccessRepository roleProductAccessRepository;
 
     public AdminUserService(UserRepository userRepository,
                             RoleRepository roleRepository,
                             ProductRepository productRepository,
                             ProductAccessService productAccessService,
                             PasswordEncoder passwordEncoder,
-                            UserRoleRepository userRoleRepository) {
+                            RoleProductAccessRepository roleProductAccessRepository) {
         this.userRepository = userRepository;
         this.roleRepository = roleRepository;
         this.productRepository = productRepository;
         this.productAccessService = productAccessService;
         this.passwordEncoder = passwordEncoder;
-        this.userRoleRepository = userRoleRepository;
+        this.roleProductAccessRepository = roleProductAccessRepository;
     }
 
     @Transactional(readOnly = true)
@@ -76,17 +78,16 @@ public class AdminUserService {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Username already exists");
         }
 
-        if (userRepository.findByEmail(request.email.trim()).isPresent()) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Email already exists");
-        }
+        String email = resolveEmailForCreate(request);
 
         User user = new User();
         user.name = request.name.trim();
         user.username = request.username.trim();
-        user.email = request.email.trim();
+        user.email = email;
         user.passwordHash = passwordEncoder.encode(request.password);
         user.isActive = request.isActive == null || Boolean.TRUE.equals(request.isActive);
         assignRoles(user, request.roles);
+        syncRoleProductAccess(user.getRoles(), request.accessProducts);
 
         return toDto(userRepository.save(user));
     }
@@ -103,15 +104,18 @@ public class AdminUserService {
                 .ifPresent(existing -> {
                     throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Username already exists");
                 });
-        userRepository.findByEmail(request.email.trim())
-                .filter(existing -> !existing.id.equals(userId))
-                .ifPresent(existing -> {
-                    throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Email already exists");
-                });
 
         user.name = request.name.trim();
         user.username = request.username.trim();
-        user.email = request.email.trim();
+        if (StringUtils.hasText(request.email)) {
+            String email = request.email.trim();
+            userRepository.findByEmail(email)
+                    .filter(existing -> !existing.id.equals(userId))
+                    .ifPresent(existing -> {
+                        throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Email already exists");
+                    });
+            user.email = email;
+        }
         user.isActive = request.isActive == null || Boolean.TRUE.equals(request.isActive);
 
         if (StringUtils.hasText(request.password)) {
@@ -119,6 +123,7 @@ public class AdminUserService {
         }
 
         replaceRoles(user, request.roles);
+        syncRoleProductAccess(user.getRoles(), request.accessProducts);
         return toDto(userRepository.save(user));
     }
 
@@ -141,10 +146,6 @@ public class AdminUserService {
 
         if (!StringUtils.hasText(request.username)) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Username is required");
-        }
-
-        if (!StringUtils.hasText(request.email)) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Email is required");
         }
 
         if (requirePassword && !StringUtils.hasText(request.password)) {
@@ -214,8 +215,92 @@ public class AdminUserService {
         }
     }
 
+    private String resolveEmailForCreate(AdminUserRequestDto request) {
+        String email = StringUtils.hasText(request.email)
+                ? request.email.trim()
+                : generateInternalEmail(request.username);
+
+        userRepository.findByEmail(email)
+                .ifPresent(existing -> {
+                    throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Email already exists");
+                });
+
+        return email;
+    }
+
+    private String generateInternalEmail(String username) {
+        return username.trim().toLowerCase(Locale.ROOT) + "@tvs.local";
+    }
+
+    private void syncRoleProductAccess(Set<Role> roles, List<String> requestedProductCodes) {
+        List<Product> activeProducts = productRepository.findAll().stream()
+                .filter(Product::isActive)
+                .toList();
+        Set<String> activeProductCodes = activeProducts.stream()
+                .map(product -> normalizeProductCode(product.code))
+                .filter(StringUtils::hasText)
+                .collect(java.util.stream.Collectors.toSet());
+        Set<String> requestedCodes = normalizeProductCodes(requestedProductCodes);
+        if (!requestedCodes.isEmpty() && !activeProductCodes.containsAll(requestedCodes)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invalid product access selection");
+        }
+
+        for (Role role : roles) {
+            if (role == null || role.id == null || !StringUtils.hasText(role.name)) {
+                continue;
+            }
+
+            Set<String> targetCodes = new HashSet<>();
+            if ("admin".equalsIgnoreCase(role.name.trim())) {
+                activeProducts.stream()
+                        .map(product -> normalizeProductCode(product.code))
+                        .filter(StringUtils::hasText)
+                        .forEach(targetCodes::add);
+            } else if (!requestedCodes.isEmpty()) {
+                targetCodes.addAll(requestedCodes);
+            } else {
+                String normalizedRoleName = normalizeRoleName(role.name);
+                activeProducts.stream()
+                        .map(product -> normalizeProductCode(product.code))
+                        .filter(StringUtils::hasText)
+                        .filter(productCode -> normalizedRoleName.contains(productCode))
+                        .forEach(targetCodes::add);
+            }
+
+            if (targetCodes.isEmpty()) {
+                continue;
+            }
+
+            activeProducts.stream()
+                    .filter(product -> targetCodes.contains(normalizeProductCode(product.code)))
+                    .filter(product -> !roleProductAccessRepository.existsByRoleIdAndProductId(role.id, product.id))
+                    .map(product -> new RoleProductAccess(role, product))
+                    .forEach(roleProductAccessRepository::save);
+        }
+    }
+
+    private Set<String> normalizeProductCodes(List<String> productCodes) {
+        Set<String> normalizedCodes = new HashSet<>();
+        if (productCodes == null) {
+            return normalizedCodes;
+        }
+
+        for (String productCode : productCodes) {
+            String normalizedCode = normalizeProductCode(productCode);
+            if (StringUtils.hasText(normalizedCode)) {
+                normalizedCodes.add(normalizedCode);
+            }
+        }
+
+        return normalizedCodes;
+    }
+
     private String normalizeRoleName(String roleName) {
         return roleName.trim().toLowerCase(Locale.ROOT);
+    }
+
+    private String normalizeProductCode(String productCode) {
+        return StringUtils.hasText(productCode) ? productCode.trim().toLowerCase(Locale.ROOT) : "";
     }
 
     private AdminUserDto toDto(User user) {
