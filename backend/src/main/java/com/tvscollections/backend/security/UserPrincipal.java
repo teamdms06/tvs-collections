@@ -32,7 +32,7 @@ public class UserPrincipal implements UserDetails {
 
     @Override
     public String getUsername() {
-        return user.email;
+        return user.username;
     }
 
     @Override
@@ -66,4 +66,5 @@ public class UserPrincipal implements UserDetails {
     public User getUser() {
         return user;
     }
+    
 }

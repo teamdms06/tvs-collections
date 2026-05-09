@@ -1,6 +1,18 @@
 :root {
-  color: #0d1b2a;
-  background: #f8fafb;
+  --theme-orange: #f29200;
+  --theme-flame: #f26321;
+  --theme-blue: #004e98;
+  --theme-cyan: #16bac2;
+  --theme-ink: #08233f;
+  --theme-muted: #526977;
+  --theme-line: rgba(0, 78, 152, 0.18);
+  --theme-surface: rgba(255, 255, 255, 0.94);
+  --theme-soft-blue: #eaf4ff;
+  --theme-soft-cyan: #e8fbfc;
+  --theme-soft-orange: #fff4df;
+  --theme-soft-flame: #fff0e9;
+  color: var(--theme-ink);
+  background: #f7fbff;
   font-family:
     Inter,
     ui-sans-serif,

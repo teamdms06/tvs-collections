@@ -3,17 +3,8 @@ import {
   emptyConsumerLead,
   loanFields,
   personalFields,
-  sampleConsumerLeads,
 } from './consumerDurable'
 
-export const sampleRetailLeads = sampleConsumerLeads.map((lead, index) => ({
-  ...lead,
-  id: `retail-lead-00${index + 1}`,
-  portfolio: 'Retail',
-  listId: `RT-0526-00${index + 1}`,
-  agreementNumber: index === 0 ? 'RTL90281476' : 'RTL90281477',
-  uid: index === 0 ? 'R1234567890123456789' : 'R2234567890123456789',
-}))
 
 export const emptyRetailLead = {
   ...emptyConsumerLead,
@@ -211,7 +202,6 @@ export const retailConfig = {
   label: 'Retail',
   shortLabel: 'Retail',
   emptyLead: emptyRetailLead,
-  sampleLeads: sampleRetailLeads,
   personalFields,
   loanFields,
   dispositionGroups,

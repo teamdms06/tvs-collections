@@ -9,13 +9,32 @@ function getAuthHeaders() {
 }
 
 async function parseResponse(response) {
-  if (!response.ok) {
-    const text = await response.text();
-    const error = text || response.statusText || "Server error";
-    throw new Error(error);
+  const text = await response.text();
+  let data = null;
+
+  if (text) {
+    try {
+      data = JSON.parse(text);
+    } catch {
+      data = text;
+    }
   }
 
-  return response.json();
+  if (!response.ok) {
+    const error =
+      (data && typeof data === "object" && data.message) ||
+      (typeof data === "string" && data) ||
+      response.statusText ||
+      "Server error";
+    const message = `${response.status} ${response.statusText}: ${error}`;
+    throw new Error(message);
+  }
+
+  if (data === null) {
+    return null;
+  }
+
+  return data;
 }
 
 export async function uploadConsumerLeads(file, productKey = "consumer") {
@@ -32,6 +51,10 @@ export async function uploadConsumerLeads(file, productKey = "consumer") {
   });
 
   return parseResponse(response);
+}
+
+export async function uploadLeadFile(file, productKey = "retail") {
+  return uploadConsumerLeads(file, productKey);
 }
 
 export async function searchConsumerLeads(query, productKey = "consumer") {
@@ -61,16 +84,25 @@ export async function getConsumerLeadById(leadId, productKey = "consumer") {
   return parseResponse(response);
 }
 
+export async function getUserDashboard() {
+  const response = await fetch(`${API_BASE_URL}/user/dashboard`, {
+    headers: getAuthHeaders(),
+  });
+
+  return parseResponse(response);
+}
+
 export async function saveConsumerFeedback(
   leadId,
   feedback,
   productKey = "consumer",
 ) {
+  console.log("Saving feedback for lead:", leadId, "Feedback:", feedback);
   const response = await fetch(
     `${API_BASE_URL}/${productKey}/leads/${leadId}/feedback`,
     {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: getAuthHeaders(),
       body: JSON.stringify(feedback),
     },
   );

@@ -19,33 +19,45 @@ public class AuthService {
     private final JwtUtils jwtUtils;
     private final UserRepository userRepository;
     private final ProductAccessService productAccessService;
+    private final ActiveUserTrackerService activeUserTrackerService;
 
     public AuthService(AuthenticationManager authenticationManager,
                        JwtUtils jwtUtils,
                        UserRepository userRepository,
-                       ProductAccessService productAccessService) {
+                       ProductAccessService productAccessService,
+                       ActiveUserTrackerService activeUserTrackerService) {
         this.authenticationManager = authenticationManager;
         this.jwtUtils = jwtUtils;
         this.userRepository = userRepository;
         this.productAccessService = productAccessService;
+        this.activeUserTrackerService = activeUserTrackerService;
     }
 
-    public AuthLoginResponse login(String email, String password) {
+    public AuthLoginResponse login(String username, String password) {
         authenticationManager.authenticate(
-                new UsernamePasswordAuthenticationToken(email, password)
+                new UsernamePasswordAuthenticationToken(username, password)
         );
 
-        User user = userRepository.findWithAccessByEmail(email)
+        User user = userRepository.findWithAccessByUsername(username)
                 .orElseThrow(() -> new IllegalArgumentException("User not found"));
 
-        String token = jwtUtils.generateToken(email);
+        String token = jwtUtils.generateToken(user.username);
         List<String> roles = user.getRoles().stream()
                 .filter(role -> role != null && StringUtils.hasText(role.name))
                 .map(role -> role.name.trim())
                 .collect(Collectors.toList());
         List<String> accessProducts = productAccessService.getAccessibleProductCodes(user);
+        if (hasAdminRole(roles)) {
+            activeUserTrackerService.markInactive(user.username);
+        } else {
+            activeUserTrackerService.markActive(user.username);
+        }
 
-        return new AuthLoginResponse(token, user.id, user.name, user.email, roles, accessProducts);
+        return new AuthLoginResponse(token, user.id, user.name, user.email, user.username, roles, accessProducts);
+    }
+
+    private boolean hasAdminRole(List<String> roles) {
+        return roles.stream().anyMatch(role -> "admin".equalsIgnoreCase(role));
     }
 }
 

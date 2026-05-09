@@ -1,5 +1,6 @@
 package com.tvscollections.backend.security;
 
+import com.tvscollections.backend.service.ActiveUserTrackerService;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -18,10 +19,14 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
     private final JwtUtils jwtUtils;
     private final CustomUserDetailsService userDetailsService;
+    private final ActiveUserTrackerService activeUserTrackerService;
 
-    public JwtAuthenticationFilter(JwtUtils jwtUtils, CustomUserDetailsService userDetailsService) {
+    public JwtAuthenticationFilter(JwtUtils jwtUtils,
+                                   CustomUserDetailsService userDetailsService,
+                                   ActiveUserTrackerService activeUserTrackerService) {
         this.jwtUtils = jwtUtils;
         this.userDetailsService = userDetailsService;
+        this.activeUserTrackerService = activeUserTrackerService;
     }
 
     @Override
@@ -31,14 +36,31 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         if (header != null && header.startsWith("Bearer ")) {
             String token = header.substring(7);
             if (jwtUtils.validateToken(token)) {
-                String email = jwtUtils.getEmailFromToken(token);
-                UserDetails userDetails = userDetailsService.loadUserByUsername(email);
+                String username = jwtUtils.getUsernameFromToken(token);
+                UserDetails userDetails = userDetailsService.loadUserByUsername(username);
                 UsernamePasswordAuthenticationToken authentication = new UsernamePasswordAuthenticationToken(
                         userDetails, null, userDetails.getAuthorities());
                 authentication.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
                 SecurityContextHolder.getContext().setAuthentication(authentication);
+                if (hasAdminRole(userDetails)) {
+                    activeUserTrackerService.markInactive(username);
+                } else {
+                    if (activeUserTrackerService.hasExpiredSession(username)) {
+                        activeUserTrackerService.markInactive(username);
+                        response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
+                        response.setContentType("application/json");
+                        response.getWriter().write("{\"message\":\"Session expired due to inactivity\"}");
+                        return;
+                    }
+                    activeUserTrackerService.markActive(username);
+                }
             }
         }
         filterChain.doFilter(request, response);
+    }
+
+    private boolean hasAdminRole(UserDetails userDetails) {
+        return userDetails.getAuthorities().stream()
+                .anyMatch(authority -> "admin".equalsIgnoreCase(authority.getAuthority()));
     }
 }

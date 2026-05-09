@@ -8,14 +8,16 @@ public class AuthLoginResponse {
     public Long userId;
     public String name;
     public String email;
+    public String username;
     public List<String> roles;
     public List<String> accessProducts;
 
-    public AuthLoginResponse(String accessToken, Long userId, String name, String email, List<String> roles, List<String> accessProducts) {
+    public AuthLoginResponse(String accessToken, Long userId, String name, String email, String username, List<String> roles, List<String> accessProducts) {
         this.accessToken = accessToken;
         this.userId = userId;
         this.name = name;
         this.email = email;
+        this.username = username;
         this.roles = roles;
         this.accessProducts = accessProducts;
     }
