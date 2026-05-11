@@ -4,7 +4,6 @@ import com.tvscollections.backend.dto.AdminDashboardDto;
 import com.tvscollections.backend.dto.ActiveUserDto;
 import com.tvscollections.backend.dto.RecentUploadDto;
 import com.tvscollections.backend.model.Feedback;
-import com.tvscollections.backend.model.UploadFile;
 import com.tvscollections.backend.model.UploadFileData;
 import com.tvscollections.backend.repository.FeedbackRepository;
 import com.tvscollections.backend.repository.UploadFileDataRepository;
@@ -178,22 +177,13 @@ public class AdminDashboardService {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Only completed or inactive status is allowed here");
         }
 
-        UploadFile uploadFile = uploadFileRepository.findById(uploadId)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Uploaded file not found"));
-        uploadFile.status = status;
-        UploadFile saved = uploadFileRepository.save(uploadFile);
+        int updatedRows = uploadFileRepository.updateStatusById(uploadId, status);
+        if (updatedRows == 0) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Uploaded file not found");
+        }
 
-        return new RecentUploadDto(
-                saved.id,
-                saved.fileName,
-                saved.product == null ? null : saved.product.code,
-                saved.product == null ? null : saved.product.name,
-                saved.totalRecords,
-                saved.validRecords,
-                saved.failedRecords,
-                saved.status,
-                saved.uploadedAt
-        );
+        return uploadFileRepository.findUploadSummaryById(uploadId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Uploaded file not found"));
     }
 
     private CellStyle[] createHeaderStyles(Workbook workbook) {

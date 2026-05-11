@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { API_BASE_URL } from "../api/config";
+import loginAgentVector from "../assets/vector_1.png";
 
 export default function LoginPage({ onLogin }) {
   const [username, setUsername] = useState("");
@@ -90,10 +91,16 @@ export default function LoginPage({ onLogin }) {
             </g>
 
             <g className="agent-person">
-              <circle cx="142" cy="196" r="22" />
-              <path d="M111 250c8-32 26-48 55-48 26 0 45 16 55 48l-28 18h-55z" />
-              <path d="M139 263h91l-12 52h-97z" />
-              <path d="M116 318h110" />
+              <circle className="person-badge" cx="185" cy="216" r="140" />
+              <image
+                className="person-vector-image"
+                href={loginAgentVector}
+                x="34"
+                y="58"
+                width="300"
+                height="300"
+                preserveAspectRatio="xMidYMid meet"
+              />
             </g>
 
             <g className="coin coin-one">
@@ -151,14 +158,6 @@ export default function LoginPage({ onLogin }) {
               {loading ? "Logging in..." : "Login"}
             </button>
           </form>
-
-          <div className="demo-users">
-            <strong>Demo users</strong>
-            <span>admin@tvs.com / admin123</span>
-            <span>consumer@tvs.com / agent123</span>
-            <span>retail@tvs.com / agent123</span>
-            <span>commercial@tvs.com / agent123</span>
-          </div>
         </div>
       </section>
     </main>

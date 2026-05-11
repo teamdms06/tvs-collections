@@ -468,10 +468,345 @@
   gap: 14px;
 }
 
+.admin-dashboard-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  width: fit-content;
+  border: 1px solid rgba(0, 78, 152, 0.18);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.84);
+  padding: 6px;
+}
+
+.admin-dashboard-tab {
+  min-height: 38px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--theme-blue);
+  cursor: pointer;
+  padding: 8px 14px;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.admin-dashboard-tab--active {
+  border-color: var(--theme-blue);
+  background: linear-gradient(135deg, var(--theme-blue), var(--theme-cyan));
+  color: #fff;
+  box-shadow: 0 10px 20px rgba(0, 78, 152, 0.18);
+}
+
+.admin-dashboard-tab-panel {
+  display: grid;
+  gap: 14px;
+}
+
+.admin-dashboard-tab-panel[hidden] {
+  display: none;
+}
+
 .admin-dashboard-panels {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(320px, 0.7fr);
   gap: 12px;
+}
+
+.dialer-dashboard {
+  display: grid;
+  gap: 14px;
+}
+
+.dialer-monitor {
+  display: grid;
+  gap: 16px;
+}
+
+.dialer-monitor__header {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.dialer-monitor__header h2 {
+  margin: 0;
+  color: var(--theme-ink);
+  font-size: 26px;
+}
+
+.dialer-monitor__meta {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  color: var(--theme-muted);
+  font-size: 12px;
+  font-weight: 850;
+}
+
+.dialer-monitor__meta strong {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border: 2px solid var(--theme-cyan);
+  border-radius: 50%;
+  color: var(--theme-blue);
+  font-size: 14px;
+  line-height: 1;
+}
+
+.dialer-live-badge,
+.dialer-status,
+.dialer-timer,
+.dialer-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border: 1px solid rgba(0, 78, 152, 0.18);
+  border-radius: 999px;
+  background: var(--theme-soft-blue);
+  color: var(--theme-blue);
+  padding: 4px 9px;
+  font-size: 11px;
+  font-weight: 900;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.dialer-live-badge span,
+.dialer-status span,
+.dialer-timer span {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.dialer-live-badge {
+  border-color: rgba(20, 187, 166, 0.34);
+  background: var(--theme-soft-cyan);
+  color: var(--theme-cyan);
+}
+
+.dialer-live-badge--error {
+  border-color: rgba(242, 99, 33, 0.34);
+  background: var(--theme-soft-flame);
+  color: var(--theme-flame);
+}
+
+.dialer-stat-grid {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.dialer-stat {
+  display: grid;
+  gap: 7px;
+  min-height: 96px;
+  align-content: center;
+  border: 1px solid rgba(0, 78, 152, 0.14);
+  border-top: 3px solid var(--theme-blue);
+  border-radius: 8px;
+  background: #fff;
+  padding: 14px;
+  box-shadow: 0 10px 24px rgba(0, 78, 152, 0.08);
+}
+
+.dialer-stat span {
+  color: var(--theme-muted);
+  font-size: 11px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.dialer-stat strong {
+  color: var(--theme-blue);
+  font-size: 28px;
+  line-height: 1;
+}
+
+.dialer-stat--ready {
+  border-top-color: var(--theme-cyan);
+}
+
+.dialer-stat--ready strong {
+  color: #0b8f70;
+}
+
+.dialer-status--ready,
+.dialer-timer--wait {
+  border-color: #00a884;
+  background: #00a884;
+  color: #fff;
+}
+
+.dialer-stat--paused,
+.dialer-stat--other {
+  border-top-color: var(--theme-orange);
+}
+
+.dialer-stat--paused strong {
+  color: var(--theme-orange);
+}
+
+.dialer-timer--pause {
+  border-color: #f29200;
+  background: #f29200;
+  color: #08233f;
+}
+
+.dialer-stat--incall {
+  border-top-color: #2f7df6;
+}
+
+.dialer-stat--incall strong {
+  color: var(--theme-blue);
+}
+
+.dialer-status--incall,
+.dialer-timer--incall {
+  border-color: #005aa8;
+  background: #005aa8;
+  color: #fff;
+}
+
+.dialer-stat--closer {
+  border-top-color: #7a58d6;
+}
+
+.dialer-stat--closer strong {
+  color: var(--theme-flame);
+}
+
+.dialer-status--closer {
+  border-color: #7a58d6;
+  background: #7a58d6;
+  color: #fff;
+}
+
+.dialer-stat--other strong {
+  color: var(--theme-flame);
+}
+
+.dialer-status--paused,
+.dialer-status--other {
+  border-color: #f29200;
+  background: #f29200;
+  color: #08233f;
+}
+
+.dialer-status--devtest,
+.dialer-status--l2eout,
+.dialer-status--misumout,
+.dialer-status--tataout,
+.dialer-status--unknown {
+  border-color: #f26321;
+  background: #f26321;
+  color: #fff;
+}
+
+.dialer-filter-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  border: 1px solid rgba(0, 78, 152, 0.12);
+  border-radius: 8px;
+  background: #f8fcfd;
+  padding: 10px;
+}
+
+.dialer-filter-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.dialer-filter-buttons--campaigns {
+  padding-left: 10px;
+  border-left: 1px solid rgba(0, 78, 152, 0.16);
+}
+
+.dialer-filter-button {
+  min-height: 36px;
+  border: 1px solid rgba(0, 78, 152, 0.24);
+  border-radius: 6px;
+  background: #fff;
+  color: var(--theme-blue);
+  cursor: pointer;
+  padding: 7px 11px;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.dialer-filter-button--active {
+  border-color: var(--theme-blue);
+  background: linear-gradient(135deg, var(--theme-blue), var(--theme-cyan));
+  color: #fff;
+}
+
+.dialer-filter-bar > span {
+  margin-left: auto;
+  color: var(--theme-muted);
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.dialer-monitor .data-table table {
+  min-width: 1080px;
+}
+
+.dialer-monitor .data-table td strong {
+  display: block;
+  color: var(--theme-ink);
+  font-size: 13px;
+  line-height: 1.3;
+}
+
+.dialer-monitor .data-table td > span:not(.dialer-chip, .dialer-status, .dialer-timer, .status-badge) {
+  display: block;
+  margin-top: 2px;
+  color: var(--theme-muted);
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.dialer-chip {
+  border-radius: 6px;
+  border-color: #78b7e5;
+  background: #dff0ff;
+  color: #173a57;
+  text-transform: none;
+}
+
+.dialer-chip--calls {
+  border-color: #14bba6;
+  background: #dffaf6;
+  color: #047c6f;
+}
+
+.dialer-timer {
+  min-width: 76px;
+  border-radius: 7px;
+}
+
+.dialer-timer--warning {
+  border-color: #e63b17;
+  background: #e63b17;
+  color: #fff;
+}
+
+.dialer-timer--inactive {
+  border-color: #8bbbe5;
+  background: #e6f3ff;
+  color: #173a57;
 }
 
 .admin-section-heading {
@@ -494,12 +829,12 @@
   box-shadow: 0 14px 34px rgba(13, 27, 42, 0.08);
 }
 
-.admin-card span {
+.admin-card > span {
   color: #5a6b73;
   font-size: 13px;
 }
 
-.admin-card strong {
+.admin-card > strong {
   display: block;
   margin-top: 8px;
   color: #0d1b2a;
@@ -614,6 +949,130 @@
   background: #e9f7df;
   color: #236509;
   font-weight: 900;
+}
+
+.data-table {
+  display: grid;
+  gap: 10px;
+}
+
+.data-table__toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.data-table__toolbar input {
+  width: min(320px, 100%);
+  min-height: 38px;
+  box-sizing: border-box;
+  border: 1px solid #96b8c1;
+  border-radius: 6px;
+  background: #fff;
+  color: #0d1b2a;
+  padding: 8px 10px;
+  font: inherit;
+  font-size: 13px;
+}
+
+.data-table__toolbar span,
+.data-table__pagination span {
+  color: #5a6b73;
+  font-size: 12px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.data-table__scroll {
+  overflow-x: auto;
+  border: 1px solid rgba(13, 27, 42, 0.16);
+  border-radius: 7px;
+}
+
+.data-table table {
+  width: 100%;
+  min-width: 720px;
+  border-collapse: collapse;
+  background: #fff;
+}
+
+.data-table th,
+.data-table td {
+  border-bottom: 1px solid rgba(13, 27, 42, 0.08);
+  padding: 10px;
+  color: #0d1b2a;
+  font-size: 13px;
+  text-align: left;
+  vertical-align: middle;
+}
+
+.data-table th {
+  background: #e9f7df;
+  color: #236509;
+  font-weight: 900;
+}
+
+.data-table th button {
+  display: inline-flex;
+  width: 100%;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  padding: 0;
+  font: inherit;
+  font-weight: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.data-table th button:disabled {
+  cursor: default;
+}
+
+.data-table th b {
+  border-radius: 4px;
+  background: rgba(35, 101, 9, 0.12);
+  padding: 2px 5px;
+  font-size: 10px;
+  text-transform: uppercase;
+}
+
+.data-table tbody tr:hover {
+  background: rgba(20, 187, 166, 0.06);
+}
+
+.data-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.data-table td strong {
+  display: inline;
+  margin: 0;
+  color: #0d1b2a;
+  font-size: 13px;
+  font-weight: 900;
+  line-height: 1.35;
+}
+
+.data-table .status-badge {
+  margin: 0;
+}
+
+.data-table__pagination {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.data-table__pagination .secondary-action {
+  min-height: 34px;
+  padding: 7px 10px;
+  font-size: 12px;
 }
 
 .app-header h1,
@@ -1057,15 +1516,13 @@ button {
 
 .form-grid {
   display: grid;
-  grid-template-columns: minmax(360px, 0.48fr) minmax(520px, 1fr);
-  gap: 14px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  align-items: stretch;
+  gap: 12px;
 }
 
 .info-column {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 10px;
-  align-content: start;
+  display: contents;
 }
 
 .panel {
@@ -1077,7 +1534,14 @@ button {
 }
 
 .panel--compact {
-  min-height: 320px;
+  min-height: 350px;
+}
+
+.info-column .panel--compact {
+  border-color: rgba(13, 27, 42, 0.22);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.92);
+  box-shadow: 0 10px 24px rgba(13, 27, 42, 0.08);
 }
 
 .panel-title {
@@ -1092,6 +1556,18 @@ button {
 .panel-title h2 {
   font-size: 20px;
   font-weight: 850;
+}
+
+.info-column .panel--compact .panel-title {
+  min-height: 58px;
+  box-sizing: border-box;
+  padding: 12px 14px;
+  border-bottom-color: rgba(13, 27, 42, 0.16);
+}
+
+.info-column .panel--compact .panel-title h2 {
+  font-size: 19px;
+  line-height: 1.1;
 }
 
 .panel-title span,
@@ -1126,12 +1602,21 @@ button {
   text-align: right;
 }
 
+.info-column .panel--compact .data-row {
+  min-height: 40px;
+  box-sizing: border-box;
+  align-items: center;
+  padding: 8px 14px;
+  border-bottom-color: rgba(13, 27, 42, 0.08);
+}
+
 .data-row--highlight {
   background: #dcefcf;
 }
 
 .history-panel {
-  grid-column: 1 / -1;
+  grid-column: 1 / span 2;
+  grid-row: 2;
   min-height: 170px;
 }
 
@@ -1165,8 +1650,11 @@ button {
 }
 
 .feedback-panel {
-  min-height: 630px;
-  padding: 18px;
+  grid-column: 3 / -1;
+  grid-row: 1 / span 2;
+  align-self: start;
+  min-height: auto;
+  padding: 16px;
 }
 
 .feedback-heading {
@@ -1174,11 +1662,11 @@ button {
   justify-content: space-between;
   gap: 16px;
   align-items: start;
-  margin-bottom: 16px;
+  margin-bottom: 14px;
 }
 
 .feedback-heading h2 {
-  font-size: 32px;
+  font-size: 28px;
   font-weight: 900;
 }
 
@@ -1246,7 +1734,7 @@ button {
 .feedback-form {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 14px;
+  gap: 12px;
 }
 
 .form-field {
@@ -1584,9 +2072,9 @@ button {
 }
 
 .login-shell .login-illustration {
-  width: min(520px, 94%);
-  margin-top: 8px;
-  margin-bottom: 10px;
+  width: min(620px, 100%);
+  margin-top: 0;
+  margin-bottom: 8px;
   opacity: 0.92;
 }
 
@@ -1673,23 +2161,13 @@ button {
   transform-origin: center;
 }
 
-.collections-illustration .agent-person circle {
-  fill: #ffd1b5;
+.collections-illustration .person-badge {
+  fill: rgba(255, 255, 255, 0.96);
+  opacity: 0.95;
 }
 
-.collections-illustration .agent-person path:first-of-type {
-  fill: var(--theme-orange);
-}
-
-.collections-illustration .agent-person path:nth-of-type(2) {
-  fill: #08233f;
-}
-
-.collections-illustration .agent-person path:nth-of-type(3) {
-  fill: none;
-  stroke: rgba(255, 255, 255, 0.82);
-  stroke-width: 7;
-  stroke-linecap: round;
+.collections-illustration .person-vector-image {
+  filter: saturate(0.98) hue-rotate(-3deg) drop-shadow(0 18px 22px rgba(8, 35, 63, 0.18));
 }
 
 .collections-illustration .coin {
@@ -1872,7 +2350,7 @@ button {
   color: var(--theme-ink);
 }
 
-.admin-card span,
+.admin-card > span,
 .panel-title span,
 .status-card span,
 .data-row span,
@@ -2045,6 +2523,91 @@ button {
   display: grid;
   grid-template-columns: 220px minmax(0, 1fr);
   gap: 0;
+}
+
+.app-shell--topbar {
+  grid-template-columns: 1fr;
+  grid-template-rows: auto 1fr;
+  gap: 0;
+}
+
+.agent-topbar {
+  position: sticky;
+  top: 0;
+  z-index: 30;
+  display: grid;
+  grid-template-columns: minmax(320px, auto) minmax(340px, 620px) minmax(180px, auto);
+  gap: 18px;
+  align-items: center;
+  min-height: 86px;
+  padding: 16px 28px;
+  background: linear-gradient(90deg, #005aa8 0%, var(--theme-blue) 72%, #06375f 100%);
+  box-shadow: 0 12px 28px rgba(0, 20, 42, 0.2);
+}
+
+.agent-topbar__left,
+.agent-topbar__right {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+
+.agent-topbar__left {
+  gap: 14px;
+}
+
+.agent-topbar__right {
+  justify-content: flex-end;
+  gap: 12px;
+}
+
+.agent-topbar .admin-brand {
+  padding: 0;
+}
+
+.agent-topbar .admin-menu {
+  display: flex;
+  align-items: center;
+  min-width: max-content;
+}
+
+.agent-topbar .admin-menu-item {
+  min-height: 40px;
+  white-space: nowrap;
+}
+
+.agent-topbar .admin-menu-item--active {
+  box-shadow: inset 0 -3px 0 var(--theme-orange);
+}
+
+.agent-topbar__search {
+  justify-self: center;
+  width: 100%;
+}
+
+.agent-topbar__right strong,
+.agent-topbar__right span {
+  display: block;
+}
+
+.agent-topbar__right strong {
+  color: #fff;
+  font-weight: 900;
+}
+
+.agent-topbar__right span {
+  margin-top: 2px;
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.agent-topbar__right .secondary-action {
+  min-height: 38px;
+  border-color: transparent;
+  background: #fff;
+  color: var(--theme-blue);
+  box-shadow: none;
 }
 
 .admin-sidebar,
@@ -2241,12 +2804,12 @@ button {
   border-radius: 999px;
 }
 
-.admin-workspace .admin-card span {
+.admin-workspace .admin-card > span {
   color: #2e4a60;
   font-size: 12px;
 }
 
-.admin-workspace .admin-grid .admin-card strong {
+.admin-workspace .admin-grid .admin-card > strong {
   color: var(--theme-blue);
   font-size: 30px;
 }
@@ -2346,12 +2909,28 @@ button {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
+  .dialer-stat-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
   .form-grid,
   .info-column {
+    display: grid;
     grid-template-columns: 1fr;
   }
 
+  .feedback-panel,
+  .history-panel {
+    grid-column: auto;
+  }
+
   .quick-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (min-width: 1181px) and (max-width: 1320px) {
+  .feedback-form {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
@@ -2419,6 +2998,33 @@ button {
 
   .admin-workspace .admin-shell,
   .app-shell {
+    grid-template-columns: 1fr;
+  }
+
+  .agent-topbar {
+    position: static;
+    grid-template-columns: 1fr;
+    gap: 14px;
+    min-height: auto;
+    padding: 16px 12px;
+  }
+
+  .agent-topbar__left,
+  .agent-topbar__right {
+    justify-content: space-between;
+    gap: 12px;
+  }
+
+  .agent-topbar__left {
+    flex-wrap: wrap;
+  }
+
+  .agent-topbar .admin-menu {
+    flex: 0 0 auto;
+  }
+
+  .agent-topbar__search {
+    justify-self: stretch;
     grid-template-columns: 1fr;
   }
 
@@ -2506,8 +3112,49 @@ button {
     flex-direction: column;
   }
 
+  .data-table__toolbar,
+  .data-table__pagination {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .data-table__toolbar input {
+    width: 100%;
+  }
+
+  .admin-dashboard-tabs {
+    width: 100%;
+  }
+
+  .admin-dashboard-tab {
+    flex: 1 1 150px;
+  }
+
+  .dialer-monitor__header,
+  .dialer-monitor__meta,
+  .dialer-filter-bar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .dialer-monitor__meta {
+    justify-content: start;
+  }
+
+  .dialer-filter-bar input,
+  .dialer-filter-buttons,
+  .dialer-filter-bar > span {
+    width: 100%;
+    margin-left: 0;
+  }
+
+  .dialer-filter-button {
+    flex: 1 1 120px;
+  }
+
   .admin-shell,
   .admin-grid,
+  .dialer-stat-grid,
   .admin-table,
   .user-dashboard__grid {
     grid-template-columns: 1fr;

@@ -193,6 +193,9 @@ public class UploadFileDataService {
         feedback.remark = textOrNull(feedbackDto.remark);
 
         Feedback saved = feedbackRepository.save(feedback);
+        if (textOrNull(feedbackDto.uid) != null) {
+            lead.uid = textOrNull(feedbackDto.uid);
+        }
         lead.latestFeedback = saved;
         uploadFileDataRepository.save(lead);
     }

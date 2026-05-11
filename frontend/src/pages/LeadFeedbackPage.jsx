@@ -7,6 +7,7 @@ import {
 } from "../api/leads";
 
 const initialFeedback = {
+  uid: "",
   status: "",
   disposition: "",
   subDisposition: "",
@@ -92,6 +93,7 @@ const FEEDBACK_FIELDS_BY_SUB_DISPOSITION = {
 };
 
 const alwaysSubmittedFields = ["disposition", "subDisposition"];
+const alwaysVisibleFeedbackFields = ["uid"];
 
 function cleanFeedbackValue(value) {
   return value && value !== "-" ? value : "";
@@ -100,6 +102,7 @@ function cleanFeedbackValue(value) {
 function createInitialFeedback(config, lead = {}) {
   const values = {
     ...initialFeedback,
+    uid: cleanFeedbackValue(lead.uid),
     status: "",
     disposition: "",
     subDisposition: cleanFeedbackValue(lead.bestDispoInternal),
@@ -119,6 +122,7 @@ function createInitialFeedback(config, lead = {}) {
 function getActiveFeedbackFieldNames(subDisposition) {
   return new Set([
     ...alwaysSubmittedFields,
+    ...alwaysVisibleFeedbackFields,
     ...(FEEDBACK_FIELDS_BY_SUB_DISPOSITION[subDisposition] || ["remark"]),
   ]);
 }
@@ -135,6 +139,7 @@ function getFeedbackValue(feedbackValues, activeFieldNames, name) {
 
 function toFeedbackRequest(feedbackValues, activeFieldNames) {
   return {
+    uid: cleanFeedbackValue(feedbackValues.uid),
     disposition: cleanFeedbackValue(feedbackValues.disposition),
     subDisposition: cleanFeedbackValue(feedbackValues.subDisposition),
     paymentMode: cleanFeedbackValue(
@@ -194,7 +199,7 @@ function getMissingRequiredFields(config, feedbackValues, activeFieldNames) {
     { label: "Disposition", name: "disposition" },
     { label: "Sub Disposition", name: "subDisposition" },
     { label: "Payment Mode", name: "paymentMode" },
-    ...(config.editableFields || []),
+    ...(config.editableFields || []).filter((field) => field.required),
   ];
 
   return requiredFields
@@ -220,6 +225,7 @@ function getValidationErrors(config, feedbackValues, activeFieldNames) {
     activeFieldNames,
     "alternateMobile",
   );
+  const uid = cleanFeedbackValue(feedbackValues.uid);
 
   if (amount && Number(amount) < 500) {
     errors.push("PTP/Paid/Pickup Amount must be at least 500");
@@ -231,6 +237,10 @@ function getValidationErrors(config, feedbackValues, activeFieldNames) {
 
   if (alternateMobile && !/^\d{10}$/.test(alternateMobile)) {
     errors.push("Alternate Mobile Number must be 10 digits");
+  }
+
+  if (uid && !/^[A-Za-z]\d{19}$/.test(uid)) {
+    errors.push("UID must start with 1 letter followed by 19 digits");
   }
 
   return errors;
@@ -554,11 +564,12 @@ export default function LeadFeedbackPage({ config, onLogout, user }) {
         .filter((field) => isActiveFeedbackField(activeFieldNames, field.name))
         .map((field) => ({
           ...field,
-          required: isActiveFeedbackField(activeFieldNames, field.name),
+          required: Boolean(field.required),
         })),
     [activeFieldNames, config.editableFields],
   );
   const lead = activeLead || config.emptyLead;
+  const shouldShowUidField = !cleanFeedbackValue(lead.uid);
   const goDashboard = () => {
     setActiveLead(null);
     setPreviewLead(null);
@@ -665,6 +676,7 @@ export default function LeadFeedbackPage({ config, onLogout, user }) {
         await getConsumerLeadById(activeLead.id, config.key),
       );
       setActiveLead(refreshedLead);
+      setFeedbackValues(createInitialFeedback(config, refreshedLead));
       loadDashboard();
       notify("Feedback saved for this lead.", "success");
     } catch (error) {
@@ -677,32 +689,55 @@ export default function LeadFeedbackPage({ config, onLogout, user }) {
   return (
     <main className="workspace-shell app-workspace">
       <Toast notice={notice} onClose={() => setNotice(null)} />
-      <section className="app-shell">
-        <aside className="app-sidebar" aria-label="Agent menu">
-          <div className="admin-brand">
-            <span aria-hidden="true">TVS</span>
-            <div>
-              <strong>Collections Desk</strong>
-              <small>Agent Portal</small>
+      <section className="app-shell app-shell--topbar">
+        <header className="agent-topbar" aria-label="Agent workspace menu">
+          <div className="agent-topbar__left">
+            <div className="admin-brand">
+              <span aria-hidden="true">TVS</span>
+              <div>
+                <strong>Collections Desk</strong>
+                <small>Agent Portal</small>
+              </div>
             </div>
+            <nav className="admin-menu" aria-label="Agent navigation">
+              <button
+                className="admin-menu-item admin-menu-item--active"
+                onClick={goDashboard}
+                type="button"
+              >
+                Dashboard
+              </button>
+            </nav>
           </div>
-          <nav className="admin-menu">
+
+          <form className="search-box agent-topbar__search" onSubmit={onSearch}>
+            <label>
+              {/* <span>Search record</span> */}
+              <input
+                onChange={(event) => setSearchQuery(event.target.value)}
+                placeholder="Mobile number or loan account number"
+                value={searchQuery}
+              />
+            </label>
+            <button className="primary-action" disabled={loading} type="submit">
+              {loading ? "Loading..." : "Search"}
+            </button>
+          </form>
+
+          <div className="agent-topbar__right">
+            <div>
+              <strong>{user.name}</strong>
+              <span>{config.label}</span>
+            </div>
             <button
-              className="admin-menu-item admin-menu-item--active"
-              onClick={goDashboard}
+              className="secondary-action"
+              onClick={onLogout}
               type="button"
             >
-              Dashboard
-            </button>
-          </nav>
-          <div className="admin-sidebar-footer">
-            <strong>{user.name}</strong>
-            <span>{config.label}</span>
-            <button className="secondary-action" onClick={onLogout} type="button">
               Logout
             </button>
           </div>
-        </aside>
+        </header>
 
         <div className="app-content">
           <header className="admin-content-header">
@@ -710,19 +745,6 @@ export default function LeadFeedbackPage({ config, onLogout, user }) {
               <p className="eyebrow">Collections feedback</p>
               <h1>{config.label}</h1>
             </div>
-            <form className="search-box" onSubmit={onSearch}>
-              <label>
-                <span>Search record</span>
-                <input
-                  onChange={(event) => setSearchQuery(event.target.value)}
-                  placeholder="Mobile number or loan account number"
-                  value={searchQuery}
-                />
-              </label>
-              <button className="primary-action" disabled={loading} type="submit">
-                {loading ? "Loading..." : "Search"}
-              </button>
-            </form>
           </header>
 
           {searchResults.length > 1 && (
@@ -757,169 +779,190 @@ export default function LeadFeedbackPage({ config, onLogout, user }) {
               <section className="lead-strip" aria-label="Current lead">
                 <FieldValue label="Portfolio" value={lead.portfolio} />
                 <FieldValue label="DFX Bucket" value={lead.bucket} />
-                <FieldValue label="Agreement Number" value={lead.agreementNumber} />
+                <FieldValue
+                  label="Agreement Number"
+                  value={lead.agreementNumber}
+                />
                 <FieldValue label="UID" value={lead.uid} highlight />
               </section>
 
-          <section className="form-grid">
-            <aside
-              className="info-column"
-              aria-label="Uploaded lead information"
-            >
-              <section className="panel panel--compact">
-                <div className="panel-title">
-                  <h2>Personal Information</h2>
-                  {/* <span>Fetched from upload data</span> */}
-                </div>
-                <div className="data-list">
-                  {config.personalFields.map((field) => (
-                    <FieldValue
-                      key={field.name}
-                      label={field.label}
-                      value={lead[field.name]}
-                      highlight={field.highlight}
-                    />
-                  ))}
-                </div>
-              </section>
-
-              <section className="panel panel--compact">
-                <div className="panel-title">
-                  <h2>Loan Information</h2>
-                  {/* <span>Fetched from database</span> */}
-                </div>
-                <div className="data-list">
-                  {config.loanFields.map((field) => (
-                    <FieldValue
-                      key={field.name}
-                      label={field.label}
-                      value={lead[field.name]}
-                      highlight={field.highlight}
-                    />
-                  ))}
-                </div>
-              </section>
-
-              <section className="panel history-panel">
-                <div className="panel-title">
-                  <h2>History</h2>
-                  <span>Previous attempts</span>
-                </div>
-                <ol>
-                  {lead.history.length === 0 && (
-                    <li>
-                      <time>-</time>
-                      <strong>No previous feedback</strong>
-                      <span>This lead does not have any saved attempts yet.</span>
-                    </li>
-                  )}
-                  {lead.history.map((item) => {
-                    const feedbackLabel = [item.disposition, item.subDisposition]
-                      .filter(Boolean)
-                      .join(" / ");
-
-                    return (
-                      <li key={item.id || `${item.date}-${feedbackLabel}`}>
-                        <time>{item.date || "-"}</time>
-                        <strong>{feedbackLabel || "-"}</strong>
-                        <span>{item.remark || "-"}</span>
-                      </li>
-                    );
-                  })}
-                </ol>
-              </section>
-            </aside>
-
-            <section
-              className="panel feedback-panel"
-              aria-label="Feedback form"
-            >
-              <div className="feedback-heading">
-                <div>
-                  {/* <p className="eyebrow">Agent editable fields</p> */}
-                  <h2>Feedback Form</h2>
-                </div>
-                <div className="status-card">
-                  <span>Status</span>
-                  <strong>
-                    {selectedGroup?.name || feedbackValues.status || "-"}
-                  </strong>
-                </div>
-              </div>
-
-              <form className="feedback-form" id="feedback-form">
-                <SelectField
-                  field={{
-                    label: "Disposition",
-                    name: "disposition",
-                    options: config.dispositionGroups.map(
-                      (group) => group.name,
-                    ),
-                    required: true,
-                    help: "Dropdown. Select Positive, Contacted, Non Contacted, or Backend NC.",
-                  }}
-                  onChange={onFeedbackChange}
-                  value={feedbackValues.disposition}
-                />
-                <SelectField
-                  field={{
-                    label: "Sub Disposition",
-                    name: "subDisposition",
-                    options: subDispositionOptions,
-                    required: true,
-                    help: "Dropdown. Options load based on selected disposition.",
-                  }}
-                  onChange={onFeedbackChange}
-                  value={feedbackValues.subDisposition}
-                />
-                {isActiveFeedbackField(activeFieldNames, "paymentMode") && (
-                  <SelectField
-                    field={{
-                      label: "Payment Mode",
-                      name: "paymentMode",
-                      options: config.paymentModes,
-                      required: true,
-                      help: "Dropdown required for payment or pickup dispositions.",
-                    }}
-                    onChange={onFeedbackChange}
-                    value={feedbackValues.paymentMode}
-                  />
-                )}
-
-                {editableFields.map((field) =>
-                  field.options ? (
-                    <SelectField
-                      field={field}
-                      key={field.name}
-                      onChange={onFeedbackChange}
-                      value={feedbackValues[field.name] || ""}
-                    />
-                  ) : (
-                    <TextField
-                      field={field}
-                      key={field.name}
-                      onChange={onFeedbackChange}
-                      value={feedbackValues[field.name] || ""}
-                    />
-                  ),
-                )}
-              </form>
-
-              <div className="form-actions">
-                <button className="secondary-action" type="button">
-                  Save Draft
-                </button>
-                <button
-                  className="primary-action"
-                  onClick={saveFeedback}
-                  form="feedback-form"
-                  type="button"
+              <section className="form-grid">
+                <aside
+                  className="info-column"
+                  aria-label="Uploaded lead information"
                 >
-                  Submit Feedback
-                </button>
-              </div>
-            </section>
-          </section>
+                  <section className="panel panel--compact">
+                    <div className="panel-title">
+                      <h2>Personal Information</h2>
+                      {/* <span>Fetched from upload data</span> */}
+                    </div>
+                    <div className="data-list">
+                      {config.personalFields.map((field) => (
+                        <FieldValue
+                          key={field.name}
+                          label={field.label}
+                          value={lead[field.name]}
+                          highlight={field.highlight}
+                        />
+                      ))}
+                    </div>
+                  </section>
+
+                  <section className="panel panel--compact">
+                    <div className="panel-title">
+                      <h2>Loan Information</h2>
+                      {/* <span>Fetched from database</span> */}
+                    </div>
+                    <div className="data-list">
+                      {config.loanFields.map((field) => (
+                        <FieldValue
+                          key={field.name}
+                          label={field.label}
+                          value={lead[field.name]}
+                          highlight={field.highlight}
+                        />
+                      ))}
+                    </div>
+                  </section>
+                </aside>
+
+                <section
+                  className="panel feedback-panel"
+                  aria-label="Feedback form"
+                >
+                  <div className="feedback-heading">
+                    <div>
+                      {/* <p className="eyebrow">Agent editable fields</p> */}
+                      <h2>Feedback Form</h2>
+                    </div>
+                    <div className="status-card">
+                      <span>Status</span>
+                      <strong>
+                        {selectedGroup?.name || feedbackValues.status || "-"}
+                      </strong>
+                    </div>
+                  </div>
+
+                  <form className="feedback-form" id="feedback-form">
+                    {shouldShowUidField && (
+                      <TextField
+                        field={{
+                          label: "UID",
+                          name: "uid",
+                          placeholder: "1 letter + 19 digits",
+                          maxLength: 20,
+                          help: "Optional. First character must be a letter followed by 19 digits.",
+                        }}
+                        onChange={onFeedbackChange}
+                        value={feedbackValues.uid || ""}
+                      />
+                    )}
+                    <SelectField
+                      field={{
+                        label: "Disposition",
+                        name: "disposition",
+                        options: config.dispositionGroups.map(
+                          (group) => group.name,
+                        ),
+                        required: true,
+                        help: "Dropdown. Select Positive, Contacted, Non Contacted, or Backend NC.",
+                      }}
+                      onChange={onFeedbackChange}
+                      value={feedbackValues.disposition}
+                    />
+                    <SelectField
+                      field={{
+                        label: "Sub Disposition",
+                        name: "subDisposition",
+                        options: subDispositionOptions,
+                        required: true,
+                        help: "Dropdown. Options load based on selected disposition.",
+                      }}
+                      onChange={onFeedbackChange}
+                      value={feedbackValues.subDisposition}
+                    />
+                    {isActiveFeedbackField(activeFieldNames, "paymentMode") && (
+                      <SelectField
+                        field={{
+                          label: "Payment Mode",
+                          name: "paymentMode",
+                          options: config.paymentModes,
+                          required: true,
+                          help: "Dropdown required for payment or pickup dispositions.",
+                        }}
+                        onChange={onFeedbackChange}
+                        value={feedbackValues.paymentMode}
+                      />
+                    )}
+
+                    {editableFields.map((field) =>
+                      field.options ? (
+                        <SelectField
+                          field={field}
+                          key={field.name}
+                          onChange={onFeedbackChange}
+                          value={feedbackValues[field.name] || ""}
+                        />
+                      ) : (
+                        <TextField
+                          field={field}
+                          key={field.name}
+                          onChange={onFeedbackChange}
+                          value={feedbackValues[field.name] || ""}
+                        />
+                      ),
+                    )}
+                  </form>
+
+                  <div className="form-actions">
+                    <button className="secondary-action" type="button">
+                      Save Draft
+                    </button>
+                    <button
+                      className="primary-action"
+                      onClick={saveFeedback}
+                      form="feedback-form"
+                      type="button"
+                    >
+                      Submit Feedback
+                    </button>
+                  </div>
+                </section>
+
+                <section className="panel history-panel">
+                  <div className="panel-title">
+                    <h2>History</h2>
+                    <span>Previous attempts</span>
+                  </div>
+                  <ol>
+                    {lead.history.length === 0 && (
+                      <li>
+                        <time>-</time>
+                        <strong>No previous feedback</strong>
+                        <span>
+                          This lead does not have any saved attempts yet.
+                        </span>
+                      </li>
+                    )}
+                    {lead.history.map((item) => {
+                      const feedbackLabel = [
+                        item.disposition,
+                        item.subDisposition,
+                      ]
+                        .filter(Boolean)
+                        .join(" / ");
+
+                      return (
+                        <li key={item.id || `${item.date}-${feedbackLabel}`}>
+                          <time>{item.date || "-"}</time>
+                          <strong>{feedbackLabel || "-"}</strong>
+                          <span>{item.remark || "-"}</span>
+                        </li>
+                      );
+                    })}
+                  </ol>
+                </section>
+              </section>
             </>
           )}
         </div>

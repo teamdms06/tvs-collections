@@ -1,6 +1,7 @@
 package com.tvscollections.backend.dto;
 
 public class FeedbackRequestDto {
+    public String uid;
     public String disposition;
     public String subDisposition;
     public String paymentMode;
