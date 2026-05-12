@@ -54,6 +54,18 @@ export async function getDialerAgents() {
   return parseResponse(response);
 }
 
+export async function getDialerAgent(agentUser) {
+  const token = localStorage.getItem("authToken");
+  const response = await fetch(
+    `${API_BASE_URL}/admin/dialer/agent?user=${encodeURIComponent(agentUser)}`,
+    {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    },
+  );
+
+  return parseResponse(response);
+}
+
 export async function getUploadedFiles() {
   const response = await fetch(`${API_BASE_URL}/admin/uploads`, {
     headers: getAuthHeaders(),

@@ -30,7 +30,10 @@ import java.io.IOException;
 import java.io.OutputStream;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Locale;
+import java.util.Set;
 
 @Service
 public class AdminDashboardService {
@@ -75,7 +78,8 @@ public class AdminDashboardService {
             "Call Back Time",
             "Non Payment reason (WHY Customer Refusing Pay)",
             "Customer Bouncing Reason (Why Emi Is Bounced)",
-            "Remark"
+            "Remark",
+            "Agent Name"
     };
 
     private final UploadFileRepository uploadFileRepository;
@@ -96,12 +100,11 @@ public class AdminDashboardService {
         this.activeUserTrackerService = activeUserTrackerService;
     }
 
+    @Transactional(readOnly = true)
     public AdminDashboardDto getDashboard() {
         LocalDateTime todayStart = LocalDate.now().atStartOfDay();
         LocalDateTime tomorrowStart = todayStart.plusDays(1);
-        List<ActiveUserDto> activeNonAdminUsers = activeUserTrackerService.getActiveUsers().stream()
-                .filter(user -> !Boolean.TRUE.equals(userRepository.hasAdminRoleByUsername(user.username)))
-                .toList();
+        List<ActiveUserDto> activeNonAdminUsers = getActiveNonAdminUsers();
 
         return new AdminDashboardDto(
                 uploadFileRepository.countByStatusNot(UploadStatus.inactive),
@@ -119,8 +122,33 @@ public class AdminDashboardService {
         );
     }
 
+    @Transactional(readOnly = true)
     public List<RecentUploadDto> getUploadedFiles() {
         return uploadFileRepository.findUploadSummaries(PageRequest.of(0, 50));
+    }
+
+    private List<ActiveUserDto> getActiveNonAdminUsers() {
+        List<ActiveUserDto> activeUsers = activeUserTrackerService.getActiveUsers();
+        if (activeUsers.isEmpty()) {
+            return List.of();
+        }
+
+        List<String> usernames = activeUsers.stream()
+                .map(user -> user.username)
+                .filter(username -> username != null && !username.isBlank())
+                .map(username -> username.toLowerCase(Locale.ROOT))
+                .distinct()
+                .toList();
+
+        if (usernames.isEmpty()) {
+            return activeUsers;
+        }
+
+        Set<String> adminUsernames = new HashSet<>(userRepository.findAdminUsernames(usernames));
+        return activeUsers.stream()
+                .filter(user -> user.username == null
+                        || !adminUsernames.contains(user.username.toLowerCase(Locale.ROOT)))
+                .toList();
     }
 
     @Transactional(readOnly = true)
@@ -286,7 +314,8 @@ public class AdminDashboardService {
         row.createCell(column++).setCellValue(textValue(feedback.callBackTime));
         row.createCell(column++).setCellValue(textValue(feedback.nonPaymentReason));
         row.createCell(column++).setCellValue(textValue(feedback.bouncingReason));
-        row.createCell(column).setCellValue(textValue(feedback.remark));
+        row.createCell(column++).setCellValue(textValue(feedback.remark));
+        row.createCell(column).setCellValue(textValue(agentName(feedback)));
     }
 
     private void writeFeedbackExportRowWithoutLead(Row row, Feedback feedback) {
@@ -328,7 +357,16 @@ public class AdminDashboardService {
         row.createCell(column++).setCellValue(textValue(feedback.callBackTime));
         row.createCell(column++).setCellValue(textValue(feedback.nonPaymentReason));
         row.createCell(column++).setCellValue(textValue(feedback.bouncingReason));
-        row.createCell(column).setCellValue(textValue(feedback.remark));
+        row.createCell(column++).setCellValue(textValue(feedback.remark));
+        row.createCell(column).setCellValue(textValue(agentName(feedback)));
+    }
+
+    private String agentName(Feedback feedback) {
+        if (feedback == null || feedback.agent == null) {
+            return null;
+        }
+
+        return feedback.agent.name;
     }
 
     private String leadText(UploadFileData lead, String fieldName) {

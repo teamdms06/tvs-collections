@@ -6,6 +6,7 @@ import com.tvscollections.backend.dto.UploadResultDto;
 import com.tvscollections.backend.dto.FeedbackRequestDto;
 import com.tvscollections.backend.dto.FeedbackHistoryDto;
 import com.tvscollections.backend.dto.LeadResponseDto;
+import com.tvscollections.backend.dto.ProductSummaryDto;
 import com.tvscollections.backend.model.Feedback;
 import com.tvscollections.backend.model.Product;
 import com.tvscollections.backend.model.UploadFile;
@@ -35,6 +36,8 @@ import org.springframework.web.multipart.MultipartFile;
 import java.io.IOException;
 import java.io.InputStream;
 import java.math.BigDecimal;
+import java.sql.ResultSet;
+import java.sql.SQLException;
 import java.sql.Timestamp;
 import java.sql.Types;
 import java.time.LocalDate;
@@ -44,13 +47,16 @@ import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Optional;
 
 @Service
 public class UploadFileDataService {
     private static final int INSERT_BATCH_SIZE = 1000;
+    private static final int SEARCH_RESULT_LIMIT = 50;
 
     private final UploadFileDataRepository uploadFileDataRepository;
     private final UploadFileRepository uploadFileRepository;
@@ -76,49 +82,249 @@ public class UploadFileDataService {
         this.jdbcTemplate = jdbcTemplate;
     }
 
+    @Transactional(readOnly = true)
     public List<LeadResponseDto> searchLeads(String productCode, String query) {
         String normalizedQuery = query == null ? "" : query.trim();
+        Product product = getProduct(productCode);
+
         if (isFullMobileNumber(normalizedQuery)) {
-            List<UploadFileData> exactMobileMatches = uploadFileDataRepository.findLatestByProductAndExactMobileNumber(
-                            productCode,
-                            normalizedQuery,
-                            UploadStatus.inactive
-                    );
+            List<LeadResponseDto> exactMobileMatches = findLatestLeadByExactMobileNumber(
+                    product,
+                    normalizedQuery
+            );
 
             if (!exactMobileMatches.isEmpty()) {
-                return List.of(toLeadSearchResponse(exactMobileMatches.get(0)));
+                return withLatestFeedback(exactMobileMatches);
             }
         }
 
-        List<UploadFileData> exactAgreementMatches = uploadFileDataRepository.findLatestByProductAndExactAgreementNumber(
-                productCode,
-                normalizedQuery,
-                UploadStatus.inactive
+        List<LeadResponseDto> exactAgreementMatches = findLatestLeadByExactAgreementNumber(
+                product,
+                normalizedQuery
         );
 
         if (!exactAgreementMatches.isEmpty()) {
-            return List.of(toLeadSearchResponse(exactAgreementMatches.get(0)));
+            return withLatestFeedback(exactAgreementMatches);
         }
 
-        return uploadFileDataRepository.searchByProductAndQuery(productCode, normalizedQuery, UploadStatus.inactive).stream()
-                .map(this::toLeadSearchResponse)
-                .toList();
-    }
-
-    private LeadResponseDto toLeadSearchResponse(UploadFileData lead) {
-        List<FeedbackHistoryDto> history = feedbackRepository.findHistoryByUploadFileDataId(lead.id);
-        return new LeadResponseDto(lead, history.isEmpty() ? List.of() : List.of(history.get(0)));
+        List<LeadResponseDto> matchingLeads = searchLeadSummaries(
+                product,
+                normalizedQuery,
+                SEARCH_RESULT_LIMIT
+        );
+        return withLatestFeedback(matchingLeads);
     }
 
     private boolean isFullMobileNumber(String query) {
         return query.matches("\\d{10,}");
     }
 
+    @Transactional(readOnly = true)
     public LeadResponseDto getLeadById(String productCode, Long id) {
-        UploadFileData lead = getLeadEntityById(productCode, id);
+        Product product = getProduct(productCode);
+        LeadResponseDto lead = findLeadSummaryById(product, id)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Lead record not found"));
         List<FeedbackHistoryDto> history = feedbackRepository.findHistoryByUploadFileDataId(lead.id);
-        System.out.println("Lead ID: " + lead.id + " has feedback history : " + history);
-        return new LeadResponseDto(lead, history);
+        lead.latestFeedback = history.isEmpty() ? null : history.get(0);
+        lead.history = history;
+        return lead;
+    }
+
+    private Product getProduct(String productCode) {
+        return productRepository.findByCode(productCode)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Product not found"));
+    }
+
+    private List<LeadResponseDto> findLatestLeadByExactMobileNumber(Product product, String mobileNumber) {
+        return jdbcTemplate.query(
+                leadSummarySql("""
+                            AND u.mobile_number = ?
+                        ORDER BY uf.uploaded_at DESC, uf.id DESC, u.id DESC
+                        LIMIT 1
+                        """),
+                (resultSet, rowNumber) -> mapLeadSummary(resultSet, product),
+                product.id,
+                UploadStatus.inactive.name(),
+                mobileNumber
+        );
+    }
+
+    private List<LeadResponseDto> findLatestLeadByExactAgreementNumber(Product product, String agreementNumber) {
+        return jdbcTemplate.query(
+                leadSummarySql("""
+                            AND u.agreement_number = ?
+                        ORDER BY uf.uploaded_at DESC, uf.id DESC, u.id DESC
+                        LIMIT 1
+                        """),
+                (resultSet, rowNumber) -> mapLeadSummary(resultSet, product),
+                product.id,
+                UploadStatus.inactive.name(),
+                agreementNumber
+        );
+    }
+
+    private Optional<LeadResponseDto> findLeadSummaryById(Product product, Long id) {
+        List<LeadResponseDto> leads = jdbcTemplate.query(
+                leadSummarySql("""
+                            AND u.id = ?
+                        LIMIT 1
+                        """),
+                (resultSet, rowNumber) -> mapLeadSummary(resultSet, product),
+                product.id,
+                UploadStatus.inactive.name(),
+                id
+        );
+        return leads.stream().findFirst();
+    }
+
+    private List<LeadResponseDto> searchLeadSummaries(Product product, String query, int limit) {
+        String likeQuery = "%" + query + "%";
+        return jdbcTemplate.query(
+                leadSummarySql("""
+                            AND (
+                                u.agreement_number LIKE ?
+                                OR u.mobile_number LIKE ?
+                            )
+                        ORDER BY uf.uploaded_at DESC, uf.id DESC, u.id DESC
+                        LIMIT ?
+                        """),
+                (resultSet, rowNumber) -> mapLeadSummary(resultSet, product),
+                product.id,
+                UploadStatus.inactive.name(),
+                likeQuery,
+                likeQuery,
+                limit
+        );
+    }
+
+    private String leadSummarySql(String extraWhereAndOrder) {
+        return """
+                SELECT
+                    u.id,
+                    u.list_id,
+                    u.agreement_number,
+                    u.uid,
+                    u.customer_name,
+                    u.mobile_number,
+                    u.address,
+                    u.city,
+                    u.pincode,
+                    u.dealer_code,
+                    u.dealer_name,
+                    u.portfolio,
+                    u.amount_financed,
+                    u.first_emi_date,
+                    u.last_emi_date,
+                    u.bounce_reason,
+                    u.tenor,
+                    u.emi,
+                    u.other_details,
+                    u.final_opening_bkt_status,
+                    u.model,
+                    u.dpd_del_string,
+                    u.branch_name,
+                    u.region,
+                    u.zone,
+                    u.language,
+                    u.total_overdue,
+                    u.cbc_charges,
+                    u.askable,
+                    u.settlement_month,
+                    u.fce_name,
+                    u.fce_number,
+                    u.tcm_name,
+                    u.tcm_number,
+                    u.acm_name,
+                    u.acm_number,
+                    u.best_dispo_internal,
+                    u.created_at,
+                    u.updated_at
+                FROM upload_file_data u
+                JOIN upload_files uf ON uf.id = u.upload_file_id
+                WHERE u.product_id = ?
+                    AND uf.status <> ?
+                """ + extraWhereAndOrder;
+    }
+
+    private LeadResponseDto mapLeadSummary(ResultSet resultSet, Product product) throws SQLException {
+        LeadResponseDto lead = new LeadResponseDto();
+        lead.id = resultSet.getLong("id");
+        lead.product = new ProductSummaryDto(product);
+        lead.listId = resultSet.getString("list_id");
+        lead.agreementNumber = resultSet.getString("agreement_number");
+        lead.uid = resultSet.getString("uid");
+        lead.customerName = resultSet.getString("customer_name");
+        lead.mobileNumber = resultSet.getString("mobile_number");
+        lead.address = resultSet.getString("address");
+        lead.city = resultSet.getString("city");
+        lead.pincode = resultSet.getString("pincode");
+        lead.dealerCode = resultSet.getString("dealer_code");
+        lead.dealerName = resultSet.getString("dealer_name");
+        lead.portfolio = resultSet.getString("portfolio");
+        lead.amountFinanced = integerOrNull(resultSet, "amount_financed");
+        lead.firstEmiDate = resultSet.getString("first_emi_date");
+        lead.lastEmiDate = resultSet.getString("last_emi_date");
+        lead.bounceReason = resultSet.getString("bounce_reason");
+        lead.tenor = integerOrNull(resultSet, "tenor");
+        lead.emi = integerOrNull(resultSet, "emi");
+        lead.otherDetails = resultSet.getString("other_details");
+        lead.finalOpeningBktStatus = resultSet.getString("final_opening_bkt_status");
+        lead.model = resultSet.getString("model");
+        lead.dpdDelString = resultSet.getString("dpd_del_string");
+        lead.branchName = resultSet.getString("branch_name");
+        lead.region = resultSet.getString("region");
+        lead.zone = resultSet.getString("zone");
+        lead.language = resultSet.getString("language");
+        lead.totalOverdue = integerOrNull(resultSet, "total_overdue");
+        lead.cbcCharges = integerOrNull(resultSet, "cbc_charges");
+        lead.askable = integerOrNull(resultSet, "askable");
+        lead.settlementMonth = resultSet.getString("settlement_month");
+        lead.fceName = resultSet.getString("fce_name");
+        lead.fceNumber = resultSet.getString("fce_number");
+        lead.tcmName = resultSet.getString("tcm_name");
+        lead.tcmNumber = resultSet.getString("tcm_number");
+        lead.acmName = resultSet.getString("acm_name");
+        lead.acmNumber = resultSet.getString("acm_number");
+        lead.bestDispoInternal = resultSet.getString("best_dispo_internal");
+        lead.createdAt = timestampOrNull(resultSet, "created_at");
+        lead.updatedAt = timestampOrNull(resultSet, "updated_at");
+        lead.history = List.of();
+        return lead;
+    }
+
+    private Integer integerOrNull(ResultSet resultSet, String columnName) throws SQLException {
+        int value = resultSet.getInt(columnName);
+        return resultSet.wasNull() ? null : value;
+    }
+
+    private LocalDateTime timestampOrNull(ResultSet resultSet, String columnName) throws SQLException {
+        Timestamp timestamp = resultSet.getTimestamp(columnName);
+        return timestamp == null ? null : timestamp.toLocalDateTime();
+    }
+
+    private List<LeadResponseDto> withLatestFeedback(List<LeadResponseDto> leads) {
+        if (leads.isEmpty()) {
+            return leads;
+        }
+
+        List<Long> leadIds = leads.stream()
+                .map(lead -> lead.id)
+                .toList();
+        Map<Long, FeedbackHistoryDto> latestFeedbackByLeadId = new LinkedHashMap<>();
+
+        for (FeedbackHistoryDto history : feedbackRepository.findHistoryByUploadFileDataIds(leadIds)) {
+            if (history.uploadFileDataId != null) {
+                latestFeedbackByLeadId.putIfAbsent(history.uploadFileDataId, history);
+            }
+        }
+
+        for (LeadResponseDto lead : leads) {
+            FeedbackHistoryDto latestFeedback = latestFeedbackByLeadId.get(lead.id);
+            lead.latestFeedback = latestFeedback;
+            lead.history = latestFeedback == null ? List.of() : List.of(latestFeedback);
+        }
+
+        return leads;
     }
 
     private UploadFileData getLeadEntityById(String productCode, Long id) {

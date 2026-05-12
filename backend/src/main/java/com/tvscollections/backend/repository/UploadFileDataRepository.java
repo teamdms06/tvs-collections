@@ -3,6 +3,7 @@ package com.tvscollections.backend.repository;
 import com.tvscollections.backend.dto.ProductCountDto;
 import com.tvscollections.backend.model.UploadFileData;
 import com.tvscollections.backend.model.UploadStatus;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -23,7 +24,8 @@ public interface UploadFileDataRepository extends JpaRepository<UploadFileData, 
             """)
     List<UploadFileData> searchByProductAndQuery(@Param("productCode") String productCode,
                                                   @Param("query") String query,
-                                                  @Param("inactiveStatus") UploadStatus inactiveStatus);
+                                                  @Param("inactiveStatus") UploadStatus inactiveStatus,
+                                                  Pageable pageable);
 
     @Query("""
             SELECT u
@@ -35,7 +37,8 @@ public interface UploadFileDataRepository extends JpaRepository<UploadFileData, 
             """)
     List<UploadFileData> findLatestByProductAndExactMobileNumber(@Param("productCode") String productCode,
                                                                   @Param("mobileNumber") String mobileNumber,
-                                                                  @Param("inactiveStatus") UploadStatus inactiveStatus);
+                                                                  @Param("inactiveStatus") UploadStatus inactiveStatus,
+                                                                  Pageable pageable);
 
     @Query("""
             SELECT u
@@ -47,7 +50,8 @@ public interface UploadFileDataRepository extends JpaRepository<UploadFileData, 
             """)
     List<UploadFileData> findLatestByProductAndExactAgreementNumber(@Param("productCode") String productCode,
                                                                      @Param("agreementNumber") String agreementNumber,
-                                                                     @Param("inactiveStatus") UploadStatus inactiveStatus);
+                                                                     @Param("inactiveStatus") UploadStatus inactiveStatus,
+                                                                     Pageable pageable);
 
     @Query("""
             SELECT u

@@ -8,6 +8,7 @@ import org.springframework.data.repository.query.Param;
 
 import java.util.Optional;
 import java.util.List;
+import java.util.Collection;
 
 public interface UserRepository extends JpaRepository<User, Long> {
     Optional<User> findByEmail(String email);
@@ -50,6 +51,19 @@ public interface UserRepository extends JpaRepository<User, Long> {
                 )
             """)
     Boolean hasAdminRoleByUsername(@Param("username") String username);
+
+    @Query("""
+            select lower(u.username)
+            from User u
+            where lower(u.username) in :usernames
+                and exists (
+                    select userRole
+                    from UserRole userRole
+                    where userRole.user = u
+                        and lower(userRole.role.name) in ('admin', 'role_admin')
+                )
+            """)
+    List<String> findAdminUsernames(@Param("usernames") Collection<String> usernames);
 
     @EntityGraph(attributePaths = {
             "userRoles",

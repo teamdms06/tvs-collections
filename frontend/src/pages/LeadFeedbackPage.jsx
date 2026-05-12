@@ -121,7 +121,14 @@ const alwaysSubmittedFields = ["disposition", "subDisposition"];
 const alwaysVisibleFeedbackFields = ["uid"];
 
 function cleanFeedbackValue(value) {
-  return value && value !== "-" ? value : "";
+  const cleanedValue = value == null ? "" : String(value).trim();
+  return cleanedValue && cleanedValue !== "-" ? cleanedValue : "";
+}
+
+function cleanUidValue(value) {
+  const cleanedValue = cleanFeedbackValue(value);
+  const match = cleanedValue.match(/[A-Za-z]\d{19}/);
+  return match ? match[0] : cleanedValue.replace(/^:+/, "").trim();
 }
 
 function cleanAlternateMobileValue(value) {
@@ -132,7 +139,7 @@ function cleanAlternateMobileValue(value) {
 function createInitialFeedback(config, lead = {}) {
   const values = {
     ...initialFeedback,
-    uid: cleanFeedbackValue(lead.uid),
+    uid: cleanUidValue(lead.uid),
     status: "",
     disposition: "",
     subDisposition: cleanFeedbackValue(lead.bestDispoInternal),
@@ -176,7 +183,7 @@ function getFeedbackValue(feedbackValues, activeFieldNames, name) {
 
 function toFeedbackRequest(feedbackValues, activeFieldNames) {
   return {
-    uid: cleanFeedbackValue(feedbackValues.uid),
+    uid: cleanUidValue(feedbackValues.uid),
     disposition: cleanFeedbackValue(feedbackValues.disposition),
     subDisposition: cleanFeedbackValue(feedbackValues.subDisposition),
     paymentMode: cleanFeedbackValue(
@@ -233,6 +240,7 @@ function toFeedbackRequest(feedbackValues, activeFieldNames) {
 
 function getMissingRequiredFields(config, feedbackValues, requiredFieldNames) {
   const requiredFields = [
+    { label: "UID", name: "uid" },
     { label: "Disposition", name: "disposition" },
     { label: "Sub Disposition", name: "subDisposition" },
     { label: "Payment Mode", name: "paymentMode" },
@@ -241,7 +249,13 @@ function getMissingRequiredFields(config, feedbackValues, requiredFieldNames) {
 
   return requiredFields
     .filter((field) => requiredFieldNames.has(field.name))
-    .filter((field) => !cleanFeedbackValue(feedbackValues[field.name]))
+    .filter((field) => {
+      const value =
+        field.name === "uid"
+          ? cleanUidValue(feedbackValues[field.name])
+          : cleanFeedbackValue(feedbackValues[field.name]);
+      return !value;
+    })
     .map((field) => field.label);
 }
 
@@ -282,7 +296,7 @@ function getValidationErrors(
     activeFieldNames,
     "alternateMobile",
   );
-  const uid = cleanFeedbackValue(feedbackValues.uid);
+  const uid = cleanUidValue(feedbackValues.uid);
 
   if (amount && Number(amount) < 500) {
     errors.push("PTP/Paid/Pickup Amount must be at least 500");
@@ -634,10 +648,21 @@ export default function LeadFeedbackPage({ config, onLogout, user }) {
     () => getActiveFeedbackFieldNames(feedbackValues.subDisposition),
     [feedbackValues.subDisposition],
   );
-  const requiredFieldNames = useMemo(
+  const baseRequiredFieldNames = useMemo(
     () => getRequiredFeedbackFieldNames(feedbackValues.subDisposition),
     [feedbackValues.subDisposition],
   );
+  const lead = activeLead || config.emptyLead;
+  const shouldShowUidField = !cleanUidValue(lead.uid);
+  const requiredFieldNames = useMemo(() => {
+    const nextRequiredFieldNames = new Set(baseRequiredFieldNames);
+
+    if (shouldShowUidField) {
+      nextRequiredFieldNames.add("uid");
+    }
+
+    return nextRequiredFieldNames;
+  }, [baseRequiredFieldNames, shouldShowUidField]);
   const editableFields = useMemo(
     () =>
       (config.editableFields || [])
@@ -649,8 +674,6 @@ export default function LeadFeedbackPage({ config, onLogout, user }) {
         })),
     [activeFieldNames, config.editableFields, requiredFieldNames],
   );
-  const lead = activeLead || config.emptyLead;
-  const shouldShowUidField = !cleanFeedbackValue(lead.uid);
   const goDashboard = () => {
     setActiveLead(null);
     setPreviewLead(null);
@@ -717,7 +740,10 @@ export default function LeadFeedbackPage({ config, onLogout, user }) {
 
   const onFeedbackChange = (name, value) => {
     setFeedbackValues((current) => {
-      const nextValues = { ...current, [name]: value };
+      const nextValues = {
+        ...current,
+        [name]: name === "uid" ? cleanUidValue(value) : value,
+      };
 
       if (name === "disposition") {
         nextValues.status = value;
@@ -963,7 +989,8 @@ export default function LeadFeedbackPage({ config, onLogout, user }) {
                           name: "uid",
                           placeholder: "1 letter + 19 digits",
                           maxLength: 20,
-                          help: "Optional. First character must be a letter followed by 19 digits.",
+                          required: true,
+                          help: "Required. First character must be a letter followed by 19 digits.",
                         }}
                         onChange={onFeedbackChange}
                         value={feedbackValues.uid || ""}

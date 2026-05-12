@@ -9,6 +9,7 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 import java.time.LocalDateTime;
+import java.util.Collection;
 import java.util.List;
 
 public interface FeedbackRepository extends JpaRepository<Feedback, Long> {
@@ -44,6 +45,7 @@ public interface FeedbackRepository extends JpaRepository<Feedback, Long> {
     @Query("""
             SELECT new com.tvscollections.backend.dto.FeedbackHistoryDto(
                 f.id,
+                f.uploadFileData.id,
                 f.createdAt,
                 f.disposition,
                 f.subDisposition,
@@ -60,4 +62,25 @@ public interface FeedbackRepository extends JpaRepository<Feedback, Long> {
             ORDER BY f.createdAt DESC
             """)
     List<FeedbackHistoryDto> findHistoryByUploadFileDataId(@Param("uploadFileDataId") Long uploadFileDataId);
+
+    @Query("""
+            SELECT new com.tvscollections.backend.dto.FeedbackHistoryDto(
+                f.id,
+                f.uploadFileData.id,
+                f.createdAt,
+                f.disposition,
+                f.subDisposition,
+                f.paymentMode,
+                f.ptpAmount,
+                f.ptpDate,
+                f.callBackDate,
+                f.callBackTime,
+                f.alternateMobileNumber,
+                f.remark
+            )
+            FROM Feedback f
+            WHERE f.uploadFileData.id IN :uploadFileDataIds
+            ORDER BY f.uploadFileData.id ASC, f.createdAt DESC, f.id DESC
+            """)
+    List<FeedbackHistoryDto> findHistoryByUploadFileDataIds(@Param("uploadFileDataIds") Collection<Long> uploadFileDataIds);
 }

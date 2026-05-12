@@ -50,6 +50,9 @@ public class LeadResponseDto {
     public LocalDateTime updatedAt;
     public List<FeedbackHistoryDto> history;
 
+    public LeadResponseDto() {
+    }
+
     public LeadResponseDto(UploadFileData lead, List<FeedbackHistoryDto> feedbackHistory) {
         this.id = lead.id;
         this.product = lead.product == null ? null : new ProductSummaryDto(lead.product);
