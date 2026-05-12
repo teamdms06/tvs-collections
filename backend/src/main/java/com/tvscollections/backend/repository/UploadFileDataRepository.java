@@ -40,6 +40,18 @@ public interface UploadFileDataRepository extends JpaRepository<UploadFileData, 
     @Query("""
             SELECT u
             FROM UploadFileData u
+            WHERE u.product.code = :productCode
+                AND u.uploadFile.status <> :inactiveStatus
+                AND TRIM(LOWER(u.agreementNumber)) = TRIM(LOWER(:agreementNumber))
+            ORDER BY u.uploadFile.uploadedAt DESC, u.uploadFile.id DESC, u.id DESC
+            """)
+    List<UploadFileData> findLatestByProductAndExactAgreementNumber(@Param("productCode") String productCode,
+                                                                     @Param("agreementNumber") String agreementNumber,
+                                                                     @Param("inactiveStatus") UploadStatus inactiveStatus);
+
+    @Query("""
+            SELECT u
+            FROM UploadFileData u
             WHERE u.id = :id
                 AND u.product.code = :productCode
                 AND u.uploadFile.status <> :inactiveStatus

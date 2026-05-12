@@ -8,6 +8,16 @@ function getAuthHeaders() {
   };
 }
 
+function getResponseErrorMessage(response, data) {
+  const message =
+    (data && typeof data === "object" && data.message) ||
+    (typeof data === "string" && !data.trim().startsWith("<") && data) ||
+    response.statusText ||
+    "Server error";
+
+  return `${response.status} ${response.statusText}: ${message}`;
+}
+
 async function parseResponse(response) {
   const text = await response.text();
   let data = null;
@@ -21,12 +31,7 @@ async function parseResponse(response) {
   }
 
   if (!response.ok) {
-    const error =
-      (data && typeof data === "object" && data.message) ||
-      (typeof data === "string" && data) ||
-      response.statusText ||
-      "Server error";
-    throw new Error(`${response.status} ${response.statusText}: ${error}`);
+    throw new Error(getResponseErrorMessage(response, data));
   }
 
   return data;
@@ -35,6 +40,15 @@ async function parseResponse(response) {
 export async function getAdminDashboard() {
   const response = await fetch(`${API_BASE_URL}/admin/dashboard`, {
     headers: getAuthHeaders(),
+  });
+
+  return parseResponse(response);
+}
+
+export async function getDialerAgents() {
+  const token = localStorage.getItem("authToken");
+  const response = await fetch(`${API_BASE_URL}/admin/dialer/agents`, {
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
   });
 
   return parseResponse(response);
@@ -65,12 +79,7 @@ export async function exportFeedbackData(startDate, endDate) {
     } catch {
       data = text;
     }
-    const error =
-      (data && typeof data === "object" && data.message) ||
-      (typeof data === "string" && data) ||
-      response.statusText ||
-      "Server error";
-    throw new Error(`${response.status} ${response.statusText}: ${error}`);
+    throw new Error(getResponseErrorMessage(response, data));
   }
 
   const disposition = response.headers.get("Content-Disposition") || "";

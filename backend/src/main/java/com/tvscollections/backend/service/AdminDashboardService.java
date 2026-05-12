@@ -243,31 +243,36 @@ public class AdminDashboardService {
     private void writeFeedbackExportRow(Row row, Feedback feedback) {
         UploadFileData lead = feedback.uploadFileData;
 
+        if (lead == null) {
+            writeFeedbackExportRowWithoutLead(row, feedback);
+            return;
+        }
+
         int column = 0;
-        row.createCell(column++).setCellValue(textValue(lead.uid));
-        row.createCell(column++).setCellValue(textValue(lead.listId));
+        row.createCell(column++).setCellValue(textValue(leadText(lead, "uid")));
+        row.createCell(column++).setCellValue(textValue(leadText(lead, "listId")));
         row.createCell(column++).setCellValue(textValue(feedback.createdAt == null ? null : feedback.createdAt.toLocalDate()));
         row.createCell(column++).setCellValue(textValue(feedback.createdAt == null ? null : feedback.createdAt.toLocalTime()));
-        row.createCell(column++).setCellValue(textValue(lead.agreementNumber));
-        row.createCell(column++).setCellValue(textValue(lead.customerName));
+        row.createCell(column++).setCellValue(textValue(leadText(lead, "agreementNumber")));
+        row.createCell(column++).setCellValue(textValue(leadText(lead, "customerName")));
         row.createCell(column++).setCellValue(textValue(feedback.disposition));
         row.createCell(column++).setCellValue(textValue(feedback.subDisposition));
-        row.createCell(column++).setCellValue(textValue(lead.customerName));
-        row.createCell(column++).setCellValue(textValue(lead.mobileNumber));
+        row.createCell(column++).setCellValue(textValue(leadText(lead, "customerName")));
+        row.createCell(column++).setCellValue(textValue(leadText(lead, "mobileNumber")));
         row.createCell(column++).setCellValue(textValue(feedback.alternateMobileNumber));
-        row.createCell(column++).setCellValue(textValue(lead.portfolio));
-        row.createCell(column++).setCellValue(textValue(lead.address));
-        row.createCell(column++).setCellValue(textValue(lead.city));
-        row.createCell(column++).setCellValue(textValue(lead.pincode));
-        row.createCell(column++).setCellValue(textValue(lead.region));
-        row.createCell(column++).setCellValue(textValue(lead.zone));
-        row.createCell(column++).setCellValue(textValue(lead.language));
-        row.createCell(column++).setCellValue(textValue(lead.product == null ? null : lead.product.name));
-        row.createCell(column++).setCellValue(textValue(lead.model));
-        row.createCell(column++).setCellValue(numberValue(lead.emi));
-        row.createCell(column++).setCellValue(numberValue(lead.askable));
-        row.createCell(column++).setCellValue(numberValue(lead.cbcCharges));
-        row.createCell(column++).setCellValue(numberValue(lead.totalOverdue));
+        row.createCell(column++).setCellValue(textValue(leadText(lead, "portfolio")));
+        row.createCell(column++).setCellValue(textValue(leadText(lead, "address")));
+        row.createCell(column++).setCellValue(textValue(leadText(lead, "city")));
+        row.createCell(column++).setCellValue(textValue(leadText(lead, "pincode")));
+        row.createCell(column++).setCellValue(textValue(leadText(lead, "region")));
+        row.createCell(column++).setCellValue(textValue(leadText(lead, "zone")));
+        row.createCell(column++).setCellValue(textValue(leadText(lead, "language")));
+        row.createCell(column++).setCellValue(textValue(lead == null || lead.product == null ? null : lead.product.name));
+        row.createCell(column++).setCellValue(textValue(leadText(lead, "model")));
+        row.createCell(column++).setCellValue(numberValue(leadNumber(lead, "emi")));
+        row.createCell(column++).setCellValue(numberValue(leadNumber(lead, "askable")));
+        row.createCell(column++).setCellValue(numberValue(leadNumber(lead, "cbcCharges")));
+        row.createCell(column++).setCellValue(numberValue(leadNumber(lead, "totalOverdue")));
         row.createCell(column++).setCellValue(numberValue(feedback.ptpAmount));
         row.createCell(column++).setCellValue(textValue(feedback.ptpDate));
         row.createCell(column++).setCellValue(textValue(feedback.transactionReceiptNo));
@@ -282,6 +287,85 @@ public class AdminDashboardService {
         row.createCell(column++).setCellValue(textValue(feedback.nonPaymentReason));
         row.createCell(column++).setCellValue(textValue(feedback.bouncingReason));
         row.createCell(column).setCellValue(textValue(feedback.remark));
+    }
+
+    private void writeFeedbackExportRowWithoutLead(Row row, Feedback feedback) {
+        int column = 0;
+        row.createCell(column++).setCellValue("");
+        row.createCell(column++).setCellValue("");
+        row.createCell(column++).setCellValue(textValue(feedback.createdAt == null ? null : feedback.createdAt.toLocalDate()));
+        row.createCell(column++).setCellValue(textValue(feedback.createdAt == null ? null : feedback.createdAt.toLocalTime()));
+        row.createCell(column++).setCellValue("");
+        row.createCell(column++).setCellValue("");
+        row.createCell(column++).setCellValue(textValue(feedback.disposition));
+        row.createCell(column++).setCellValue(textValue(feedback.subDisposition));
+        row.createCell(column++).setCellValue("");
+        row.createCell(column++).setCellValue("");
+        row.createCell(column++).setCellValue(textValue(feedback.alternateMobileNumber));
+        row.createCell(column++).setCellValue("");
+        row.createCell(column++).setCellValue("");
+        row.createCell(column++).setCellValue("");
+        row.createCell(column++).setCellValue("");
+        row.createCell(column++).setCellValue("");
+        row.createCell(column++).setCellValue("");
+        row.createCell(column++).setCellValue("");
+        row.createCell(column++).setCellValue("");
+        row.createCell(column++).setCellValue("");
+        row.createCell(column++).setCellValue(0);
+        row.createCell(column++).setCellValue(0);
+        row.createCell(column++).setCellValue(0);
+        row.createCell(column++).setCellValue(0);
+        row.createCell(column++).setCellValue(numberValue(feedback.ptpAmount));
+        row.createCell(column++).setCellValue(textValue(feedback.ptpDate));
+        row.createCell(column++).setCellValue(textValue(feedback.transactionReceiptNo));
+        row.createCell(column++).setCellValue(textValue(feedback.pickupTime));
+        row.createCell(column++).setCellValue(textValue(feedback.pickupAddress));
+        row.createCell(column++).setCellValue(textValue(feedback.paymentMode));
+        row.createCell(column++).setCellValue(textValue(feedback.paidToName));
+        row.createCell(column++).setCellValue(textValue(feedback.paidToContact));
+        row.createCell(column++).setCellValue(textValue(feedback.paidShowroom));
+        row.createCell(column++).setCellValue(textValue(feedback.callBackDate));
+        row.createCell(column++).setCellValue(textValue(feedback.callBackTime));
+        row.createCell(column++).setCellValue(textValue(feedback.nonPaymentReason));
+        row.createCell(column++).setCellValue(textValue(feedback.bouncingReason));
+        row.createCell(column).setCellValue(textValue(feedback.remark));
+    }
+
+    private String leadText(UploadFileData lead, String fieldName) {
+        if (lead == null) {
+            return null;
+        }
+
+        return switch (fieldName) {
+            case "uid" -> lead.uid;
+            case "listId" -> lead.listId;
+            case "agreementNumber" -> lead.agreementNumber;
+            case "customerName" -> lead.customerName;
+            case "mobileNumber" -> lead.mobileNumber;
+            case "portfolio" -> lead.portfolio;
+            case "address" -> lead.address;
+            case "city" -> lead.city;
+            case "pincode" -> lead.pincode;
+            case "region" -> lead.region;
+            case "zone" -> lead.zone;
+            case "language" -> lead.language;
+            case "model" -> lead.model;
+            default -> null;
+        };
+    }
+
+    private Number leadNumber(UploadFileData lead, String fieldName) {
+        if (lead == null) {
+            return null;
+        }
+
+        return switch (fieldName) {
+            case "emi" -> lead.emi;
+            case "askable" -> lead.askable;
+            case "cbcCharges" -> lead.cbcCharges;
+            case "totalOverdue" -> lead.totalOverdue;
+            default -> null;
+        };
     }
 
     private String textValue(Object value) {

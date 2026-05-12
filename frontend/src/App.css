@@ -729,8 +729,7 @@
 }
 
 .dialer-filter-buttons--campaigns {
-  padding-left: 10px;
-  border-left: 1px solid rgba(0, 78, 152, 0.16);
+  padding-left: 0;
 }
 
 .dialer-filter-button {
@@ -757,6 +756,88 @@
   color: var(--theme-muted);
   font-size: 12px;
   font-weight: 900;
+}
+
+.dialer-table-summary {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  border: 1px solid rgba(0, 78, 152, 0.16);
+  border-radius: 8px;
+  background: #fff;
+  padding: 12px;
+  box-shadow: 0 10px 24px rgba(0, 78, 152, 0.08);
+}
+
+.dialer-table-summary > strong {
+  color: var(--theme-ink);
+  font-size: 13px;
+  font-weight: 950;
+  text-transform: uppercase;
+}
+
+.dialer-table-summary__badges {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.dialer-count-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 36px;
+  border: 1px solid rgba(0, 78, 152, 0.2);
+  border-radius: 999px;
+  background: var(--theme-soft-blue);
+  color: var(--theme-blue);
+  padding: 6px 12px;
+  white-space: nowrap;
+}
+
+.dialer-count-badge span {
+  font-size: 11px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.dialer-count-badge strong {
+  color: inherit;
+  font-size: 18px;
+  font-weight: 950;
+  line-height: 1;
+}
+
+.dialer-count-badge--ready {
+  border-color: #00a884;
+  background: #00a884;
+  color: #fff;
+}
+
+.dialer-count-badge--paused {
+  border-color: #f29200;
+  background: #f29200;
+  color: #08233f;
+}
+
+.dialer-count-badge--incall {
+  border-color: #005aa8;
+  background: #005aa8;
+  color: #fff;
+}
+
+.dialer-count-badge--closer {
+  border-color: #7a58d6;
+  background: #7a58d6;
+  color: #fff;
+}
+
+.dialer-count-badge--other {
+  border-color: #f26321;
+  background: #f26321;
+  color: #fff;
 }
 
 .dialer-monitor .data-table table {
@@ -1356,6 +1437,48 @@
   padding: 11px 12px;
   text-align: left;
   cursor: pointer;
+}
+
+.result-row--detailed {
+  grid-template-columns: minmax(170px, 1.15fr) minmax(150px, 1fr) minmax(110px, 0.75fr) minmax(150px, 0.9fr) auto minmax(180px, 1.15fr) auto;
+}
+
+.result-row strong {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.result-row em,
+.lead-feedback-tag {
+  display: inline-flex;
+  width: fit-content;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid #8bbbe5;
+  border-radius: 999px;
+  background: #e6f3ff;
+  color: #173a57;
+  padding: 3px 8px;
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 900;
+  white-space: nowrap;
+}
+
+.lead-feedback-tag--taken {
+  border-color: #00a884;
+  background: #00a884;
+  color: #fff;
+}
+
+.result-row small {
+  overflow: hidden;
+  color: #5a6b73;
+  font-size: 12px;
+  font-weight: 800;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .result-row b {

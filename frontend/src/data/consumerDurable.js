@@ -254,9 +254,8 @@ export const editableFields = [
     label: 'Alternate Mobile Number',
     name: 'alternateMobile',
     placeholder: '10 digit alternate number',
-    minLength: 10,
     maxLength: 10,
-    help: '10 digit. Use only when a valid alternate number is shared.',
+    help: 'Enter 10 digit alternate number, or 0 when not provided.',
   },
   {
     label: 'Remark',

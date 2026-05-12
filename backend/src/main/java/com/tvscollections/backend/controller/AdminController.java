@@ -3,6 +3,7 @@ package com.tvscollections.backend.controller;
 import com.tvscollections.backend.dto.AdminUserRequestDto;
 import com.tvscollections.backend.service.AdminDashboardService;
 import com.tvscollections.backend.service.AdminUserService;
+import com.tvscollections.backend.service.DialerProxyService;
 import com.tvscollections.backend.model.UploadStatus;
 import com.tvscollections.backend.model.Role;
 import com.tvscollections.backend.repository.UserRepository;
@@ -13,7 +14,6 @@ import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
-import org.springframework.web.servlet.mvc.method.annotation.StreamingResponseBody;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -24,6 +24,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.server.ResponseStatusException;
 
+import java.io.ByteArrayOutputStream;
 import java.time.LocalDate;
 import java.time.format.DateTimeParseException;
 import java.util.LinkedHashMap;
@@ -34,13 +35,16 @@ import java.util.Map;
 public class AdminController {
     private final AdminDashboardService adminDashboardService;
     private final AdminUserService adminUserService;
+    private final DialerProxyService dialerProxyService;
     private final UserRepository userRepository;
 
     public AdminController(AdminDashboardService adminDashboardService,
                            AdminUserService adminUserService,
+                           DialerProxyService dialerProxyService,
                            UserRepository userRepository) {
         this.adminDashboardService = adminDashboardService;
         this.adminUserService = adminUserService;
+        this.dialerProxyService = dialerProxyService;
         this.userRepository = userRepository;
     }
 
@@ -68,6 +72,34 @@ public class AdminController {
         }
     }
 
+    @GetMapping("/dialer/agents")
+    public ResponseEntity<?> getDialerAgents() {
+        try {
+            validateAdmin();
+            return ResponseEntity.ok()
+                    .contentType(MediaType.TEXT_PLAIN)
+                    .body(dialerProxyService.getLoggedInAgents());
+        } catch (ResponseStatusException error) {
+            return handleControllerError("Get dialer agents failed", error);
+        } catch (Exception error) {
+            return handleControllerError("Get dialer agents failed", error);
+        }
+    }
+
+    @GetMapping("/dialer/agent")
+    public ResponseEntity<?> getDialerAgent(@RequestParam("user") String agentUser) {
+        try {
+            validateAdmin();
+            return ResponseEntity.ok()
+                    .contentType(MediaType.TEXT_PLAIN)
+                    .body(dialerProxyService.getAgentStatus(agentUser));
+        } catch (ResponseStatusException error) {
+            return handleControllerError("Get dialer agent failed", error);
+        } catch (Exception error) {
+            return handleControllerError("Get dialer agent failed", error);
+        }
+    }
+
     @GetMapping("/export/feedback")
     public ResponseEntity<?> exportFeedback(@RequestParam("startDate") String startDate,
                                             @RequestParam("endDate") String endDate) {
@@ -84,13 +116,13 @@ public class AdminController {
             }
 
             String fileName = "feedback-export-" + startDate + "-to-" + endDate + ".xlsx";
-            StreamingResponseBody exportFile = outputStream ->
-                    adminDashboardService.exportFeedback(parsedStartDate, parsedEndDate, outputStream);
+            ByteArrayOutputStream exportFile = new ByteArrayOutputStream();
+            adminDashboardService.exportFeedback(parsedStartDate, parsedEndDate, exportFile);
 
             return ResponseEntity.ok()
                     .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + fileName + "\"")
                     .contentType(MediaType.parseMediaType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"))
-                    .body(exportFile);
+                    .body(exportFile.toByteArray());
         } catch (ResponseStatusException error) {
             return handleControllerError("Export feedback failed", error);
         } catch (Exception error) {

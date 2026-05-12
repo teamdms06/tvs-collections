@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   getConsumerLeadById,
   getUserDashboard,
@@ -62,6 +62,7 @@ const FEEDBACK_FIELDS_BY_SUB_DISPOSITION = {
   ],
   AP: [
     ...paymentDispositionFields,
+    "receiptNo",
     ...paidToFields,
     ...refusalFields,
     "alternateMobile",
@@ -88,8 +89,32 @@ const FEEDBACK_FIELDS_BY_SUB_DISPOSITION = {
   ],
   LMG: [...callBackFields, "alternateMobile", "remark"],
   CD: ["alternateMobile", "remark"],
-  RTP: ["nonPaymentReason", "alternateMobile", "remark"],
+  RTP: [...refusalFields, "alternateMobile", "remark"],
   WRNG: ["alternateMobile", "remark"],
+};
+
+const REQUIRED_FIELDS_BY_SUB_DISPOSITION = {
+  OCP: ["amount", "actionDate", "paymentMode", "receiptNo", "remark"],
+  BPTP: ["amount", "actionDate", "paymentMode", "remark"],
+  ONKT: ["amount", "actionDate", "paymentMode", "remark"],
+  Pickup: [
+    "amount",
+    "actionDate",
+    "paymentMode",
+    "pickupTime",
+    "pickupAddress",
+    "remark",
+  ],
+  PTP: ["amount", "actionDate", "paymentMode", "remark"],
+  LPTP: ["amount", "actionDate", "paymentMode", "remark"],
+  AP: ["amount", "actionDate", "paymentMode", "receiptNo", "remark"],
+  APCB: ["amount", "actionDate", "remark"],
+  CLBK: ["callBackDate", "callBackTime", "remark"],
+  CLBK_P: ["callBackDate", "callBackTime", "remark"],
+  LMG: ["remark"],
+  CD: ["remark"],
+  RTP: ["nonPaymentReason", "customerBouncingReason", "remark"],
+  WRNG: ["remark"],
 };
 
 const alwaysSubmittedFields = ["disposition", "subDisposition"];
@@ -97,6 +122,11 @@ const alwaysVisibleFeedbackFields = ["uid"];
 
 function cleanFeedbackValue(value) {
   return value && value !== "-" ? value : "";
+}
+
+function cleanAlternateMobileValue(value) {
+  const cleanedValue = cleanFeedbackValue(value);
+  return cleanedValue === "0" ? "" : cleanedValue;
 }
 
 function createInitialFeedback(config, lead = {}) {
@@ -124,6 +154,13 @@ function getActiveFeedbackFieldNames(subDisposition) {
     ...alwaysSubmittedFields,
     ...alwaysVisibleFeedbackFields,
     ...(FEEDBACK_FIELDS_BY_SUB_DISPOSITION[subDisposition] || ["remark"]),
+  ]);
+}
+
+function getRequiredFeedbackFieldNames(subDisposition) {
+  return new Set([
+    ...alwaysSubmittedFields,
+    ...(REQUIRED_FIELDS_BY_SUB_DISPOSITION[subDisposition] || ["remark"]),
   ]);
 }
 
@@ -185,7 +222,7 @@ function toFeedbackRequest(feedbackValues, activeFieldNames) {
     callBackTime: cleanFeedbackValue(
       getFeedbackValue(feedbackValues, activeFieldNames, "callBackTime"),
     ),
-    alternateMobileNumber: cleanFeedbackValue(
+    alternateMobileNumber: cleanAlternateMobileValue(
       getFeedbackValue(feedbackValues, activeFieldNames, "alternateMobile"),
     ),
     remark: cleanFeedbackValue(
@@ -194,25 +231,45 @@ function toFeedbackRequest(feedbackValues, activeFieldNames) {
   };
 }
 
-function getMissingRequiredFields(config, feedbackValues, activeFieldNames) {
+function getMissingRequiredFields(config, feedbackValues, requiredFieldNames) {
   const requiredFields = [
     { label: "Disposition", name: "disposition" },
     { label: "Sub Disposition", name: "subDisposition" },
     { label: "Payment Mode", name: "paymentMode" },
-    ...(config.editableFields || []).filter((field) => field.required),
+    ...(config.editableFields || []),
   ];
 
   return requiredFields
+    .filter((field) => requiredFieldNames.has(field.name))
+    .filter((field) => !cleanFeedbackValue(feedbackValues[field.name]))
+    .map((field) => field.label);
+}
+
+function getMissingActiveAnswerFields(config, feedbackValues, activeFieldNames) {
+  const answerFields = [
+    ...(config.editableFields || []),
+  ];
+
+  return answerFields
+    .filter((field) => field.name === "alternateMobile")
     .filter((field) => isActiveFeedbackField(activeFieldNames, field.name))
     .filter((field) => !cleanFeedbackValue(feedbackValues[field.name]))
     .map((field) => field.label);
 }
 
-function getValidationErrors(config, feedbackValues, activeFieldNames) {
+function getValidationErrors(
+  config,
+  feedbackValues,
+  activeFieldNames,
+  requiredFieldNames,
+) {
   const errors = getMissingRequiredFields(
     config,
     feedbackValues,
-    activeFieldNames,
+    requiredFieldNames,
+  );
+  errors.push(
+    ...getMissingActiveAnswerFields(config, feedbackValues, activeFieldNames),
   );
   const amount = getFeedbackValue(feedbackValues, activeFieldNames, "amount");
   const paidToContact = getFeedbackValue(
@@ -235,8 +292,8 @@ function getValidationErrors(config, feedbackValues, activeFieldNames) {
     errors.push("Paid to whom (Contact no) must be 10 digits");
   }
 
-  if (alternateMobile && !/^\d{10}$/.test(alternateMobile)) {
-    errors.push("Alternate Mobile Number must be 10 digits");
+  if (alternateMobile && alternateMobile !== "0" && !/^\d{10}$/.test(alternateMobile)) {
+    errors.push("Alternate Mobile Number must be 10 digits, or enter 0 when not provided");
   }
 
   if (uid && !/^[A-Za-z]\d{19}$/.test(uid)) {
@@ -391,7 +448,16 @@ function normalizeLead(lead) {
         ? lead.product
         : lead.product?.name || lead.product?.code || "",
     history,
+    latestFeedback: normalizeHistoryItem(lead.latestFeedback),
   };
+}
+
+function getLeadLastRemark(lead) {
+  return lead.latestFeedback?.remark || lead.history?.[0]?.remark || "";
+}
+
+function hasLeadFeedback(lead) {
+  return Boolean(lead.latestFeedback || lead.history?.length);
 }
 
 function normalizeHistoryItem(item) {
@@ -506,10 +572,12 @@ export default function LeadFeedbackPage({ config, onLogout, user }) {
     createInitialFeedback(config),
   );
   const [loading, setLoading] = useState(false);
+  const [redirectingAfterSubmit, setRedirectingAfterSubmit] = useState(false);
   const [notice, setNotice] = useState(null);
   const [dashboard, setDashboard] = useState(null);
   const [dashboardLoading, setDashboardLoading] = useState(true);
   const [dashboardError, setDashboardError] = useState("");
+  const submitRedirectTimerRef = useRef(null);
 
   const notify = (message, type = "info") => {
     setNotice({ message, type });
@@ -544,6 +612,15 @@ export default function LeadFeedbackPage({ config, onLogout, user }) {
     };
   }, []);
 
+  useEffect(
+    () => () => {
+      if (submitRedirectTimerRef.current) {
+        window.clearTimeout(submitRedirectTimerRef.current);
+      }
+    },
+    [],
+  );
+
   const selectedGroup = useMemo(
     () =>
       config.dispositionGroups.find(
@@ -557,6 +634,10 @@ export default function LeadFeedbackPage({ config, onLogout, user }) {
     () => getActiveFeedbackFieldNames(feedbackValues.subDisposition),
     [feedbackValues.subDisposition],
   );
+  const requiredFieldNames = useMemo(
+    () => getRequiredFeedbackFieldNames(feedbackValues.subDisposition),
+    [feedbackValues.subDisposition],
+  );
   const editableFields = useMemo(
     () =>
       (config.editableFields || [])
@@ -564,9 +645,9 @@ export default function LeadFeedbackPage({ config, onLogout, user }) {
         .filter((field) => isActiveFeedbackField(activeFieldNames, field.name))
         .map((field) => ({
           ...field,
-          required: Boolean(field.required),
+          required: requiredFieldNames.has(field.name),
         })),
-    [activeFieldNames, config.editableFields],
+    [activeFieldNames, config.editableFields, requiredFieldNames],
   );
   const lead = activeLead || config.emptyLead;
   const shouldShowUidField = !cleanFeedbackValue(lead.uid);
@@ -648,6 +729,10 @@ export default function LeadFeedbackPage({ config, onLogout, user }) {
   };
 
   const saveFeedback = async () => {
+    if (loading || redirectingAfterSubmit) {
+      return;
+    }
+
     if (!activeLead) {
       notify("Search and open a record before saving feedback.", "warning");
       return;
@@ -657,6 +742,7 @@ export default function LeadFeedbackPage({ config, onLogout, user }) {
       config,
       feedbackValues,
       activeFieldNames,
+      requiredFieldNames,
     );
 
     if (validationErrors.length > 0) {
@@ -670,17 +756,24 @@ export default function LeadFeedbackPage({ config, onLogout, user }) {
     setLoading(true);
     setNotice(null);
     const feedbackRequest = toFeedbackRequest(feedbackValues, activeFieldNames);
+    const leadId = activeLead.id;
     try {
-      await saveConsumerFeedback(activeLead.id, feedbackRequest, config.key);
-      const refreshedLead = normalizeLead(
-        await getConsumerLeadById(activeLead.id, config.key),
-      );
-      setActiveLead(refreshedLead);
-      setFeedbackValues(createInitialFeedback(config, refreshedLead));
+      await saveConsumerFeedback(leadId, feedbackRequest, config.key);
       loadDashboard();
-      notify("Feedback saved for this lead.", "success");
+      setRedirectingAfterSubmit(true);
+      notify("Feedback submitted successfully. Returning to dashboard...", "success");
+      submitRedirectTimerRef.current = window.setTimeout(() => {
+        setActiveLead(null);
+        setPreviewLead(null);
+        setSearchResults([]);
+        setSearchQuery("");
+        setFeedbackValues(createInitialFeedback(config));
+        setRedirectingAfterSubmit(false);
+        submitRedirectTimerRef.current = null;
+      }, 3000);
     } catch (error) {
       notify(error.message, "error");
+      setRedirectingAfterSubmit(false);
     } finally {
       setLoading(false);
     }
@@ -749,19 +842,38 @@ export default function LeadFeedbackPage({ config, onLogout, user }) {
 
           {searchResults.length > 1 && (
             <section className="results-panel" aria-label="Search results">
-              {searchResults.map((result) => (
-                <button
-                  className="result-row"
-                  key={result.id}
-                  onClick={() => setPreviewLead(result)}
-                  type="button"
-                >
-                  <strong>{result.customerName}</strong>
-                  <span>{result.agreementNumber}</span>
-                  <span>{result.mobileNumber}</span>
-                  <b>Preview</b>
-                </button>
-              ))}
+              {searchResults.map((result, index) => {
+                const lastRemark = getLeadLastRemark(result);
+                const feedbackTaken = hasLeadFeedback(result);
+
+                return (
+                  <button
+                    className="result-row result-row--detailed"
+                    key={result.id}
+                    onClick={() => setPreviewLead(result)}
+                    type="button"
+                  >
+                    <strong>
+                      {result.customerName}
+                      {index === 0 && <em>Latest</em>}
+                    </strong>
+                    <span>{result.agreementNumber}</span>
+                    <span>{result.mobileNumber}</span>
+                    <span>{result.createdAt ? formatDateTime(result.createdAt) : "-"}</span>
+                    <span
+                      className={
+                        feedbackTaken
+                          ? "lead-feedback-tag lead-feedback-tag--taken"
+                          : "lead-feedback-tag"
+                      }
+                    >
+                      {feedbackTaken ? "Feedback Taken" : "No Feedback"}
+                    </span>
+                    <small>{lastRemark || "No previous remark"}</small>
+                    <b>Preview</b>
+                  </button>
+                );
+              })}
             </section>
           )}
 
@@ -887,8 +999,10 @@ export default function LeadFeedbackPage({ config, onLogout, user }) {
                           label: "Payment Mode",
                           name: "paymentMode",
                           options: config.paymentModes,
-                          required: true,
-                          help: "Dropdown required for payment or pickup dispositions.",
+                          required: requiredFieldNames.has("paymentMode"),
+                          help: requiredFieldNames.has("paymentMode")
+                            ? "Dropdown required for this disposition."
+                            : "Dropdown optional for this disposition.",
                         }}
                         onChange={onFeedbackChange}
                         value={feedbackValues.paymentMode}
@@ -915,16 +1029,23 @@ export default function LeadFeedbackPage({ config, onLogout, user }) {
                   </form>
 
                   <div className="form-actions">
-                    <button className="secondary-action" type="button">
+                    <button
+                      className="secondary-action"
+                      disabled={loading || redirectingAfterSubmit}
+                      type="button"
+                    >
                       Save Draft
                     </button>
                     <button
                       className="primary-action"
+                      disabled={loading || redirectingAfterSubmit}
                       onClick={saveFeedback}
                       form="feedback-form"
                       type="button"
                     >
-                      Submit Feedback
+                      {loading || redirectingAfterSubmit
+                        ? "Submitting..."
+                        : "Submit Feedback"}
                     </button>
                   </div>
                 </section>

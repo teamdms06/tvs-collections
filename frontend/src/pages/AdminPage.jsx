@@ -1,9 +1,10 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   exportFeedbackData,
   getAdminDashboard,
   getAdminUsers,
   getAdminUserOptions,
+  getDialerAgents,
   getUploadedFiles,
   saveAdminUser,
   updateAdminUserAccess,
@@ -53,6 +54,24 @@ function StatusBadge({ status, inactive }) {
   );
 }
 
+function Toast({ notice, onClose }) {
+  if (!notice) {
+    return null;
+  }
+
+  return (
+    <div className={`toast-notice toast-notice--${notice.type}`} role="alert">
+      <div>
+        <span>{notice.type}</span>
+        <p>{notice.message}</p>
+      </div>
+      <button aria-label="Dismiss notification" onClick={onClose} type="button">
+        x
+      </button>
+    </div>
+  );
+}
+
 const emptyUserForm = {
   name: "",
   username: "",
@@ -61,22 +80,58 @@ const emptyUserForm = {
   roles: ["agent"],
 };
 
-const DIALER_PROXY_URL = "http://localhost:3000/api/agents";
 const DIALER_REFRESH_SECONDS = 5;
 const DIALER_PAUSE_WARN_SECONDS = 5 * 60;
 const DIALER_WAIT_WARN_SECONDS = 3 * 60;
 const DIALER_INCALL_WARN_SECONDS = 10 * 60;
+const DIALER_TIMER_STORAGE_KEY = "tvsDialerTimerState";
+const WEBHOOK_SOCKET_URL = import.meta.env.VITE_WEBHOOK_SOCKET_URL || "http://192.168.114.241:3001";
 const DIALER_CAMPAIGNS = [
-  "TVSTWH",
-  "TVSTRLH",
   "TVSCRCLP",
-  "TVSCRCLG",
   "TVSCRCLB",
-  "TVSTWOD",
+  "TVSCRCLG",
+  "TVSPTPFK",
   "TVSPTPFH",
+  "TVSPTPFG",
+  "TVSCSNB",
+  "TVSTLKA",
+  "TVSTWOD",
+  "TVSTWH",
+  "TVSTWG",
+  "TVSTRLH",
+  "TVSTRLG",
+  "TVSTRLF",
 ];
 const DIALER_ALLOWED_CAMPAIGNS = new Set(DIALER_CAMPAIGNS);
 const dialerStatuses = ["ALL", "READY", "PAUSED", "INCALL", "CLOSER"];
+
+function getDialerStatusCounts(agents) {
+  const counts = {
+    total: agents.length,
+    ready: 0,
+    paused: 0,
+    incall: 0,
+    closer: 0,
+    other: 0,
+  };
+
+  for (const agent of agents) {
+    const status = agent.status.toUpperCase();
+    if (status === "READY") {
+      counts.ready += 1;
+    } else if (status === "PAUSED") {
+      counts.paused += 1;
+    } else if (status === "INCALL") {
+      counts.incall += 1;
+    } else if (status === "CLOSER") {
+      counts.closer += 1;
+    } else {
+      counts.other += 1;
+    }
+  }
+
+  return counts;
+}
 
 function parseDialerCsv(text) {
   return text
@@ -107,14 +162,16 @@ function syncDialerTimerState(currentState, agents) {
   for (const agent of agents) {
     const key = agent.user;
     const status = agent.status.toUpperCase();
+    const sessionId = agent.sessionId || "";
     const previous = currentState[key];
     const isTimedStatus =
       status === "READY" || status === "PAUSED" || status === "INCALL";
 
-    if (previous?.status === status) {
+    if (previous?.status === status && previous?.sessionId === sessionId) {
       nextState[key] = previous;
     } else {
       nextState[key] = {
+        sessionId,
         status,
         startedAt: isTimedStatus ? now : null,
       };
@@ -122,6 +179,49 @@ function syncDialerTimerState(currentState, agents) {
   }
 
   return nextState;
+}
+
+function readDialerTimerState() {
+  if (typeof window === "undefined") {
+    return {};
+  }
+
+  try {
+    const rawTimerState = window.localStorage.getItem(DIALER_TIMER_STORAGE_KEY);
+    const parsedTimerState = rawTimerState ? JSON.parse(rawTimerState) : {};
+
+    if (!parsedTimerState || typeof parsedTimerState !== "object") {
+      return {};
+    }
+
+    return Object.fromEntries(
+      Object.entries(parsedTimerState).filter(
+        ([, timer]) =>
+          timer &&
+          typeof timer === "object" &&
+          typeof timer.sessionId === "string" &&
+          typeof timer.status === "string" &&
+          (typeof timer.startedAt === "number" || timer.startedAt === null),
+      ),
+    );
+  } catch {
+    return {};
+  }
+}
+
+function saveDialerTimerState(timerState) {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  try {
+    window.localStorage.setItem(
+      DIALER_TIMER_STORAGE_KEY,
+      JSON.stringify(timerState),
+    );
+  } catch {
+    // Storage can be unavailable in restricted browser modes. Timers still work in memory.
+  }
 }
 
 function formatDuration(totalSeconds) {
@@ -147,6 +247,40 @@ function getDialerElapsed(timerState, user, nowTick) {
   }
 
   return Math.max(0, Math.floor((nowTick - timer.startedAt) / 1000));
+}
+
+function getDialerElapsedMs(timerState, user, nowTick) {
+  const timer = timerState[user];
+  if (!timer?.startedAt) {
+    return null;
+  }
+
+  return Math.max(0, nowTick - timer.startedAt);
+}
+
+function loadSocketIoClient(serverUrl) {
+  if (window.io) {
+    return Promise.resolve(window.io);
+  }
+
+  const existingScript = document.querySelector(`script[data-socket-io-client="${serverUrl}"]`);
+
+  if (existingScript) {
+    return new Promise((resolve, reject) => {
+      existingScript.addEventListener("load", () => resolve(window.io), { once: true });
+      existingScript.addEventListener("error", reject, { once: true });
+    });
+  }
+
+  return new Promise((resolve, reject) => {
+    const script = document.createElement("script");
+    script.src = `${serverUrl}/socket.io/socket.io.js`;
+    script.async = true;
+    script.dataset.socketIoClient = serverUrl;
+    script.onload = () => resolve(window.io);
+    script.onerror = reject;
+    document.head.appendChild(script);
+  });
 }
 
 function DialerStatusBadge({ status }) {
@@ -189,58 +323,70 @@ function DialerTimer({ active, elapsedSeconds, type }) {
   );
 }
 
-function DialerDashboard({ isActive }) {
+function useDialerLiveState() {
   const [agents, setAgents] = useState([]);
   const [timerState, setTimerState] = useState({});
   const [nowTick, setNowTick] = useState(0);
   const [countdown, setCountdown] = useState(DIALER_REFRESH_SECONDS);
-  const [activeStatusFilter, setActiveStatusFilter] = useState("ALL");
-  const [activeCampaignFilter, setActiveCampaignFilter] = useState("ALL");
   const [lastUpdated, setLastUpdated] = useState("");
   const [error, setError] = useState("");
   const [hasLoaded, setHasLoaded] = useState(false);
+  const agentsRef = useRef([]);
+  const timerStateRef = useRef({});
+  const nowTickRef = useRef(0);
 
-  const loadDialerAgents = async () => {
+  const loadDialerAgents = useCallback(async () => {
     try {
-      const response = await fetch(DIALER_PROXY_URL);
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}`);
-      }
-
-      const parsedAgents = parseDialerCsv(await response.text());
+      const parsedAgents = parseDialerCsv(await getDialerAgents());
       setAgents(parsedAgents);
-      setTimerState((current) => syncDialerTimerState(current, parsedAgents));
-      setNowTick(Date.now());
+      const refreshedAt = Date.now();
+      const nextTimerState = syncDialerTimerState(timerStateRef.current, parsedAgents);
+
+      setTimerState(nextTimerState);
+      saveDialerTimerState(nextTimerState);
+      setNowTick(refreshedAt);
       setLastUpdated(new Date().toLocaleTimeString("en-IN"));
       setError("");
+
+      agentsRef.current = parsedAgents;
+      timerStateRef.current = nextTimerState;
+      nowTickRef.current = refreshedAt;
+
+      return {
+        agents: parsedAgents,
+        timerState: nextTimerState,
+        nowTick: refreshedAt,
+      };
     } catch (loadError) {
       setError(
-        `Dialer proxy unreachable. Start proxy-server.js and try again. (${loadError.message})`,
+        `Dialer upstream unreachable. Check backend ViciDial settings and network. (${loadError.message})`,
       );
+      throw loadError;
     } finally {
       setHasLoaded(true);
     }
-  };
+  }, []);
 
   useEffect(() => {
-    if (!isActive || hasLoaded) {
+    if (hasLoaded) {
       return undefined;
     }
 
-    const initialLoad = window.setTimeout(loadDialerAgents, 0);
+    const storedTimerState = readDialerTimerState();
+    timerStateRef.current = storedTimerState;
+
+    const initialLoad = window.setTimeout(() => {
+      loadDialerAgents().catch(() => undefined);
+    }, 0);
     return () => window.clearTimeout(initialLoad);
-  }, [hasLoaded, isActive]);
+  }, [hasLoaded, loadDialerAgents]);
 
   useEffect(() => {
-    if (!isActive) {
-      return undefined;
-    }
-
     const timer = window.setInterval(() => {
       setNowTick(Date.now());
       setCountdown((current) => {
         if (current <= 1) {
-          loadDialerAgents();
+          loadDialerAgents().catch(() => undefined);
           return DIALER_REFRESH_SECONDS;
         }
 
@@ -249,35 +395,178 @@ function DialerDashboard({ isActive }) {
     }, 1000);
 
     return () => window.clearInterval(timer);
-  }, [isActive]);
+  }, [loadDialerAgents]);
 
-  const stats = useMemo(() => {
-    const counts = {
-      total: agents.length,
-      ready: 0,
-      paused: 0,
-      incall: 0,
-      closer: 0,
-      other: 0,
-    };
+  useEffect(() => {
+    agentsRef.current = agents;
+  }, [agents]);
 
-    for (const agent of agents) {
-      const status = agent.status.toUpperCase();
-      if (status === "READY") {
-        counts.ready += 1;
-      } else if (status === "PAUSED") {
-        counts.paused += 1;
-      } else if (status === "INCALL") {
-        counts.incall += 1;
-      } else if (status === "CLOSER") {
-        counts.closer += 1;
-      } else {
-        counts.other += 1;
-      }
+  useEffect(() => {
+    timerStateRef.current = timerState;
+  }, [timerState]);
+
+  useEffect(() => {
+    nowTickRef.current = nowTick || Date.now();
+  }, [nowTick]);
+
+  const logBestAvailableAgent = useCallback(async (callData) => {
+    let latestSnapshot = null;
+
+    try {
+      latestSnapshot = await loadDialerAgents();
+    } catch (refreshError) {
+      console.warn(
+        "[Campaign Webhook] Could not refresh dialer agents before selection; using current dashboard snapshot.",
+        refreshError.message,
+      );
     }
 
-    return counts;
-  }, [agents]);
+    const campaignId = String(callData.campaignId || "").toUpperCase();
+    const currentAgents = latestSnapshot?.agents || agentsRef.current;
+    const currentTimerState = latestSnapshot?.timerState || timerStateRef.current;
+    const currentTick = latestSnapshot?.nowTick || nowTickRef.current || Date.now();
+    const campaignAgentsForCall = currentAgents.filter(
+      (agent) => agent.campaignId.toUpperCase() === campaignId,
+    );
+    const readyAgents = campaignAgentsForCall
+      .filter((agent) => agent.status.toUpperCase() === "READY")
+      .map((agent) => {
+        const readyMilliseconds =
+          getDialerElapsedMs(currentTimerState, agent.user, currentTick) || 0;
+        const readySeconds = Math.floor(readyMilliseconds / 1000);
+
+        return {
+          ...agent,
+          readyMilliseconds,
+          readySeconds,
+          readyTime: formatDuration(readySeconds),
+          readyTimePrecise: `${formatDuration(readySeconds)}.${String(
+            readyMilliseconds % 1000,
+          ).padStart(3, "0")}`,
+        };
+      })
+      .sort((left, right) => {
+        if (right.readyMilliseconds !== left.readyMilliseconds) {
+          return right.readyMilliseconds - left.readyMilliseconds;
+        }
+
+        return left.user.localeCompare(right.user, undefined, {
+          numeric: true,
+          sensitivity: "base",
+        });
+      });
+
+    console.log(
+      `[Campaign Webhook] Campaign ${campaignId} received call from ${callData.caller}`,
+      callData,
+    );
+
+    if (readyAgents.length === 0) {
+      console.log(
+        `[Campaign Webhook] No READY agent found for campaign ${campaignId}`,
+        {
+          call: callData,
+          campaignAgents: campaignAgentsForCall,
+        },
+      );
+      return;
+    }
+
+    const bestAgent = readyAgents[0];
+
+    console.log(
+      `[Campaign Webhook] Best available agent for ${campaignId} call ${callData.caller}: ${bestAgent.user} (${bestAgent.fullName}) ready for ${bestAgent.readyTimePrecise}`,
+      {
+        call: callData,
+        bestAgent,
+        readyAgents,
+      },
+    );
+    console.table(
+      readyAgents.map((agent) => ({
+        user: agent.user,
+        fullName: agent.fullName,
+        campaignId: agent.campaignId,
+        status: agent.status,
+        readyTime: agent.readyTimePrecise,
+        readyMilliseconds: agent.readyMilliseconds,
+        callsToday: agent.callsToday,
+      })),
+    );
+  }, [loadDialerAgents]);
+
+  useEffect(() => {
+    let socket;
+    let isMounted = true;
+
+    loadSocketIoClient(WEBHOOK_SOCKET_URL)
+      .then((io) => {
+        if (!isMounted || !io) {
+          return;
+        }
+
+        socket = io(WEBHOOK_SOCKET_URL);
+
+        socket.on("connect", () => {
+          console.log("[Campaign Webhook] Connected to observer server", WEBHOOK_SOCKET_URL);
+        });
+
+        socket.on("campaign_call_observed", logBestAvailableAgent);
+
+        socket.on("connect_error", (socketError) => {
+          console.warn("[Campaign Webhook] Observer connection failed:", socketError.message);
+        });
+      })
+      .catch((socketError) => {
+        console.warn("[Campaign Webhook] Socket.IO client could not be loaded:", socketError);
+      });
+
+    return () => {
+      isMounted = false;
+      if (socket) {
+        socket.disconnect();
+      }
+    };
+  }, [logBestAvailableAgent]);
+
+  return {
+    agents,
+    timerState,
+    nowTick,
+    countdown,
+    lastUpdated,
+    error,
+  };
+}
+
+function DialerDashboard({ dialerLive }) {
+  const {
+    agents,
+    timerState,
+    nowTick,
+    countdown,
+    lastUpdated,
+    error,
+  } = dialerLive;
+  const [activeStatusFilter, setActiveStatusFilter] = useState("ALL");
+  const [activeCampaignFilter, setActiveCampaignFilter] = useState("ALL");
+
+  const stats = useMemo(() => getDialerStatusCounts(agents), [agents]);
+
+  const campaignAgents = useMemo(() => {
+    if (activeCampaignFilter === "ALL") {
+      return agents;
+    }
+
+    return agents.filter(
+      (agent) => agent.campaignId.toUpperCase() === activeCampaignFilter,
+    );
+  }, [activeCampaignFilter, agents]);
+
+  const campaignStats = useMemo(
+    () => getDialerStatusCounts(campaignAgents),
+    [campaignAgents],
+  );
 
   const visibleAgents = useMemo(() => {
     return agents.filter((agent) => {
@@ -300,6 +589,16 @@ function DialerDashboard({ isActive }) {
     { key: "closer", label: "Closer", value: stats.closer },
     { key: "other", label: "Other", value: stats.other },
   ];
+  const campaignStatusBadges = [
+    { key: "total", label: "Total", value: campaignStats.total },
+    { key: "ready", label: "Ready", value: campaignStats.ready },
+    { key: "paused", label: "Paused", value: campaignStats.paused },
+    { key: "incall", label: "In Call", value: campaignStats.incall },
+    { key: "closer", label: "Closer", value: campaignStats.closer },
+    { key: "other", label: "Other", value: campaignStats.other },
+  ];
+  const campaignSummaryLabel =
+    activeCampaignFilter === "ALL" ? "All campaigns" : activeCampaignFilter;
   const campaignFilters = ["ALL", ...DIALER_CAMPAIGNS];
   const dialerColumns = [
     {
@@ -461,6 +760,23 @@ function DialerDashboard({ isActive }) {
           </div>
           <span>{formatNumber(visibleAgents.length)} agents</span>
         </div>
+
+        {activeCampaignFilter !== "ALL" && (
+          <div className="dialer-table-summary" aria-label="Campaign agent status counts">
+            <strong>{campaignSummaryLabel}</strong>
+            <div className="dialer-table-summary__badges">
+              {campaignStatusBadges.map((badge) => (
+                <span
+                  className={`dialer-count-badge dialer-count-badge--${badge.key}`}
+                  key={badge.key}
+                >
+                  <span>{badge.label}</span>
+                  <strong>{formatNumber(badge.value)}</strong>
+                </span>
+              ))}
+            </div>
+          </div>
+        )}
 
         <DataTable
           columns={dialerColumns}
@@ -642,7 +958,7 @@ function DataTable({
   );
 }
 
-function AdminContent({ activeMenu, user }) {
+function AdminContent({ activeMenu, user, notify }) {
   const accessibleProducts =
     user.accessProducts && user.accessProducts.length > 0
       ? user.accessProducts
@@ -653,7 +969,7 @@ function AdminContent({ activeMenu, user }) {
   const [selectedProduct, setSelectedProduct] = useState(defaultProduct);
   const [selectedFile, setSelectedFile] = useState(null);
   const [uploadResult, setUploadResult] = useState(null);
-  const [uploadError, setUploadError] = useState("");
+  const [, setUploadError] = useState("");
   const [isUploading, setIsUploading] = useState(false);
   const [dashboard, setDashboard] = useState(null);
   const [activeDashboardTab, setActiveDashboardTab] = useState("crm");
@@ -673,8 +989,9 @@ function AdminContent({ activeMenu, user }) {
   const [refreshKey, setRefreshKey] = useState(0);
   const [exportStartDate, setExportStartDate] = useState("");
   const [exportEndDate, setExportEndDate] = useState("");
-  const [exportError, setExportError] = useState("");
+  const [, setExportError] = useState("");
   const [isExporting, setIsExporting] = useState(false);
+  const dialerLive = useDialerLiveState();
 
   useEffect(() => {
     let isActive = true;
@@ -801,8 +1118,10 @@ function AdminContent({ activeMenu, user }) {
 
   const handleUpload = async (event) => {
     event.preventDefault();
+    const uploadForm = event.currentTarget;
 
     if (!selectedFile) {
+      notify("Please select an Excel file.", "warning");
       setUploadError("Please select an Excel file.");
       return;
     }
@@ -810,15 +1129,19 @@ function AdminContent({ activeMenu, user }) {
     setIsUploading(true);
     setUploadError("");
     setUploadResult(null);
+    notify("Uploading file. Please wait.", "info");
 
     try {
       const result = await uploadLeadFile(selectedFile, selectedProduct);
       setUploadResult(result);
       setSelectedFile(null);
       setRefreshKey((current) => current + 1);
-      event.currentTarget.reset();
+      uploadForm.reset();
+      notify("Data uploaded successfully.", "success");
     } catch (error) {
-      setUploadError(error.message || "Upload failed.");
+      const message = error.message || "Upload failed.";
+      setUploadError(message);
+      notify(message, "error");
     } finally {
       setIsUploading(false);
     }
@@ -836,10 +1159,14 @@ function AdminContent({ activeMenu, user }) {
         ),
       );
       setRefreshKey((current) => current + 1);
-    } catch (error) {
-      setUploadsError(
-        error.message || "Could not update uploaded file access.",
+      notify(
+        isActive ? "Uploaded file activated." : "Uploaded file deactivated.",
+        "success",
       );
+    } catch (error) {
+      const message = error.message || "Could not update uploaded file access.";
+      setUploadsError(message);
+      notify(message, "error");
     } finally {
       setUpdatingUploadId(null);
     }
@@ -909,8 +1236,16 @@ function AdminContent({ activeMenu, user }) {
       });
       closeUserForm();
       setRefreshKey((current) => current + 1);
+      notify(
+        userFormMode === "edit"
+          ? "User updated successfully."
+          : "User created successfully.",
+        "success",
+      );
     } catch (error) {
-      setUsersError(error.message || "Could not save user.");
+      const message = error.message || "Could not save user.";
+      setUsersError(message);
+      notify(message, "error");
     } finally {
       setSavingUser(false);
     }
@@ -926,8 +1261,14 @@ function AdminContent({ activeMenu, user }) {
         current.map((item) => (item.id === userId ? updatedUser : item)),
       );
       setRefreshKey((current) => current + 1);
+      notify(
+        isActive ? "User activated successfully." : "User deactivated successfully.",
+        "success",
+      );
     } catch (error) {
-      setUsersError(error.message || "Could not update user status.");
+      const message = error.message || "Could not update user status.";
+      setUsersError(message);
+      notify(message, "error");
     } finally {
       setUpdatingUserId(null);
     }
@@ -937,17 +1278,20 @@ function AdminContent({ activeMenu, user }) {
     event.preventDefault();
 
     if (!exportStartDate || !exportEndDate) {
+      notify("Select both start date and end date.", "warning");
       setExportError("Select both start date and end date.");
       return;
     }
 
     if (exportEndDate < exportStartDate) {
+      notify("End date must be after start date.", "warning");
       setExportError("End date must be after start date.");
       return;
     }
 
     setIsExporting(true);
     setExportError("");
+    notify("Preparing feedback Excel.", "info");
 
     try {
       const { blob, fileName } = await exportFeedbackData(
@@ -962,8 +1306,11 @@ function AdminContent({ activeMenu, user }) {
       link.click();
       link.remove();
       window.URL.revokeObjectURL(url);
+      notify("Feedback Excel exported successfully.", "success");
     } catch (error) {
-      setExportError(error.message || "Could not export feedback data.");
+      const message = error.message || "Could not export feedback data.";
+      setExportError(message);
+      notify(message, "error");
     } finally {
       setIsExporting(false);
     }
@@ -1120,7 +1467,7 @@ function AdminContent({ activeMenu, user }) {
           className="admin-dashboard-tab-panel"
           hidden={activeDashboardTab !== "dialer"}
         >
-          <DialerDashboard isActive={activeDashboardTab === "dialer"} />
+          <DialerDashboard dialerLive={dialerLive} />
         </div>
       </div>
     );
@@ -1172,9 +1519,6 @@ function AdminContent({ activeMenu, user }) {
               {isUploading ? "Uploading..." : "Upload to Database"}
             </button>
 
-            {uploadError && (
-              <p className="notice notice--error">{uploadError}</p>
-            )}
             {uploadResult && (
               <div className="upload-summary">
                 <span>Upload completed</span>
@@ -1302,7 +1646,6 @@ function AdminContent({ activeMenu, user }) {
           >
             {isExporting ? "Exporting..." : "Export Feedback Excel"}
           </button>
-          {exportError && <p className="notice notice--error">{exportError}</p>}
         </form>
       </section>
     );
@@ -1505,9 +1848,24 @@ function AdminContent({ activeMenu, user }) {
 
 export default function AdminPage({ onLogout, user }) {
   const [activeMenu, setActiveMenu] = useState("dashboard");
+  const [notice, setNotice] = useState(null);
+
+  const notify = (message, type = "info") => {
+    setNotice({ message, type });
+  };
+
+  useEffect(() => {
+    if (!notice) {
+      return undefined;
+    }
+
+    const timer = window.setTimeout(() => setNotice(null), 4500);
+    return () => window.clearTimeout(timer);
+  }, [notice]);
 
   return (
     <main className="workspace-shell admin-workspace">
+      <Toast notice={notice} onClose={() => setNotice(null)} />
       <section className="admin-shell">
         <aside className="admin-sidebar" aria-label="Admin menu">
           <div className="admin-brand">
@@ -1559,7 +1917,7 @@ export default function AdminPage({ onLogout, user }) {
             </div>
             <span>{user.name}</span>
           </header>
-          <AdminContent activeMenu={activeMenu} user={user} />
+          <AdminContent activeMenu={activeMenu} notify={notify} user={user} />
         </div>
       </section>
     </main>

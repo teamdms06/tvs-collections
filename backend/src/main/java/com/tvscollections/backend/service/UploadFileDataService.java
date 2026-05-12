@@ -86,13 +86,28 @@ public class UploadFileDataService {
                     );
 
             if (!exactMobileMatches.isEmpty()) {
-                return List.of(new LeadResponseDto(exactMobileMatches.get(0), List.of()));
+                return List.of(toLeadSearchResponse(exactMobileMatches.get(0)));
             }
         }
 
+        List<UploadFileData> exactAgreementMatches = uploadFileDataRepository.findLatestByProductAndExactAgreementNumber(
+                productCode,
+                normalizedQuery,
+                UploadStatus.inactive
+        );
+
+        if (!exactAgreementMatches.isEmpty()) {
+            return List.of(toLeadSearchResponse(exactAgreementMatches.get(0)));
+        }
+
         return uploadFileDataRepository.searchByProductAndQuery(productCode, normalizedQuery, UploadStatus.inactive).stream()
-                .map(lead -> new LeadResponseDto(lead, List.of()))
+                .map(this::toLeadSearchResponse)
                 .toList();
+    }
+
+    private LeadResponseDto toLeadSearchResponse(UploadFileData lead) {
+        List<FeedbackHistoryDto> history = feedbackRepository.findHistoryByUploadFileDataId(lead.id);
+        return new LeadResponseDto(lead, history.isEmpty() ? List.of() : List.of(history.get(0)));
     }
 
     private boolean isFullMobileNumber(String query) {
