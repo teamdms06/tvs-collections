@@ -326,6 +326,28 @@ function FieldValue({ label, value, highlight }) {
   );
 }
 
+function maskMobileNumber(value) {
+  const digits = String(value || "").replace(/\D/g, "");
+
+  if (!digits) {
+    return "";
+  }
+
+  if (digits.length <= 4) {
+    return "*".repeat(digits.length);
+  }
+
+  return `${"*".repeat(digits.length - 4)}${digits.slice(-4)}`;
+}
+
+function getLeadDisplayValue(lead, fieldName) {
+  if (fieldName === "mobileNumber") {
+    return maskMobileNumber(lead?.[fieldName]);
+  }
+
+  return lead?.[fieldName];
+}
+
 function formatDateTime(value) {
   if (!value) {
     return "-";
@@ -547,7 +569,10 @@ function SearchModal({ lead, onClose, onOpen }) {
         </div>
         <div className="modal-grid">
           <FieldValue label="Agreement Number" value={lead.agreementNumber} />
-          <FieldValue label="Mobile Number" value={lead.mobileNumber} />
+          <FieldValue
+            label="Mobile Number"
+            value={maskMobileNumber(lead.mobileNumber)}
+          />
           <FieldValue label="Portfolio" value={lead.portfolio} />
           <FieldValue label="UID" value={lead.uid} highlight />
           <FieldValue
@@ -884,7 +909,7 @@ export default function LeadFeedbackPage({ config, onLogout, user }) {
                       {index === 0 && <em>Latest</em>}
                     </strong>
                     <span>{result.agreementNumber}</span>
-                    <span>{result.mobileNumber}</span>
+                    <span>{maskMobileNumber(result.mobileNumber)}</span>
                     <span>{result.createdAt ? formatDateTime(result.createdAt) : "-"}</span>
                     <span
                       className={
@@ -939,7 +964,7 @@ export default function LeadFeedbackPage({ config, onLogout, user }) {
                         <FieldValue
                           key={field.name}
                           label={field.label}
-                          value={lead[field.name]}
+                          value={getLeadDisplayValue(lead, field.name)}
                           highlight={field.highlight}
                         />
                       ))}
