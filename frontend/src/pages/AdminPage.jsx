@@ -21,6 +21,12 @@ const adminMenu = [
   { key: "users", label: "User Manager" },
 ];
 
+const LOW_CALL_COUNT_PRIORITY_CAMPAIGNS = new Set([
+  "TVSTRLH",
+  "TVSTRLG",
+  "TVSTRLF",
+]);
+
 function formatNumber(value) {
   return Number(value || 0).toLocaleString("en-IN");
 }
@@ -34,6 +40,18 @@ function formatDateTime(value) {
     dateStyle: "medium",
     timeStyle: "short",
   }).format(new Date(value));
+}
+
+function formatMinutes(value) {
+  const totalMinutes = Number(value || 0);
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+
+  if (hours === 0) {
+    return `${minutes}m`;
+  }
+
+  return `${hours}h ${minutes}m`;
 }
 
 function StatusBadge({ status, inactive }) {
@@ -76,6 +94,7 @@ function Toast({ notice, onClose }) {
 const emptyUserForm = {
   name: "",
   username: "",
+  dialerUser: "",
   password: "",
   isActive: true,
   roles: ["agent"],
@@ -486,6 +505,8 @@ function useDialerLiveState() {
     const campaignAgentsForCall = currentAgents.filter(
       (agent) => agent.campaignId.toUpperCase() === campaignId,
     );
+    const shouldPrioritizeLowCallCount =
+      LOW_CALL_COUNT_PRIORITY_CAMPAIGNS.has(campaignId);
     const readyAgents = campaignAgentsForCall
       .filter((agent) => agent.status.toUpperCase() === "READY")
       .map((agent) => {
@@ -504,11 +525,19 @@ function useDialerLiveState() {
         };
       })
       .sort((left, right) => {
-        if (right.readyMilliseconds !== left.readyMilliseconds) {
+        if (shouldPrioritizeLowCallCount && left.callsToday !== right.callsToday) {
+          return left.callsToday - right.callsToday;
+        }
+
+        if (!shouldPrioritizeLowCallCount && right.readyMilliseconds !== left.readyMilliseconds) {
           return right.readyMilliseconds - left.readyMilliseconds;
         }
 
-        if (left.callsToday !== right.callsToday) {
+        if (shouldPrioritizeLowCallCount && right.readyMilliseconds !== left.readyMilliseconds) {
+          return right.readyMilliseconds - left.readyMilliseconds;
+        }
+
+        if (!shouldPrioritizeLowCallCount && left.callsToday !== right.callsToday) {
           return left.callsToday - right.callsToday;
         }
 
@@ -542,8 +571,9 @@ function useDialerLiveState() {
         call: callData,
         bestAgent,
         readyAgents,
-        selectionRule:
-          "READY agents in matching campaign from the pre-call dashboard snapshot, sorted by longest dashboard wait milliseconds, then lowest calls today, then username.",
+        selectionRule: shouldPrioritizeLowCallCount
+          ? "READY agents in matching campaign from the pre-call dashboard snapshot, sorted by lowest calls today, then longest dashboard wait milliseconds, then username."
+          : "READY agents in matching campaign from the pre-call dashboard snapshot, sorted by longest dashboard wait milliseconds, then lowest calls today, then username.",
       },
     );
     console.table(
@@ -894,9 +924,11 @@ function DataTable({
   pageSize = 10,
   searchPlaceholder = "Search table",
 }) {
+  const pageSizeOptions = [5, 10, 25, 50, 100];
   const [searchText, setSearchText] = useState("");
   const [sortConfig, setSortConfig] = useState({ key: "", direction: "asc" });
   const [page, setPage] = useState(1);
+  const [selectedPageSize, setSelectedPageSize] = useState(pageSize);
 
   const normalizedSearchText = searchText.trim().toLowerCase();
 
@@ -945,11 +977,11 @@ function DataTable({
     });
   }, [columns, normalizedSearchText, rows, sortConfig]);
 
-  const totalPages = Math.max(1, Math.ceil(processedRows.length / pageSize));
+  const totalPages = Math.max(1, Math.ceil(processedRows.length / selectedPageSize));
   const currentPage = Math.min(page, totalPages);
   const visibleRows = processedRows.slice(
-    (currentPage - 1) * pageSize,
-    currentPage * pageSize,
+    (currentPage - 1) * selectedPageSize,
+    currentPage * selectedPageSize,
   );
 
   const changeSort = (column) => {
@@ -971,6 +1003,11 @@ function DataTable({
     setPage(1);
   };
 
+  const updatePageSize = (value) => {
+    setSelectedPageSize(Number(value));
+    setPage(1);
+  };
+
   return (
     <div className="data-table">
       <div className="data-table__toolbar">
@@ -980,9 +1017,25 @@ function DataTable({
           placeholder={searchPlaceholder}
           value={searchText}
         />
-        <span>
-          {formatNumber(processedRows.length)} / {formatNumber(rows.length)}
-        </span>
+        <div className="data-table__toolbar-actions">
+          <label>
+            <span>Rows</span>
+            <select
+              aria-label="Rows per page"
+              onChange={(event) => updatePageSize(event.target.value)}
+              value={selectedPageSize}
+            >
+              {pageSizeOptions.map((option) => (
+                <option key={option} value={option}>
+                  {option}
+                </option>
+              ))}
+            </select>
+          </label>
+          <span>
+            {formatNumber(processedRows.length)} / {formatNumber(rows.length)}
+          </span>
+        </div>
       </div>
 
       <div className="data-table__scroll">
@@ -1026,7 +1079,7 @@ function DataTable({
         </table>
       </div>
 
-      {processedRows.length > pageSize && (
+      {processedRows.length > selectedPageSize && (
         <div className="data-table__pagination">
           <button
             className="secondary-action"
@@ -1304,6 +1357,7 @@ function AdminContent({ activeMenu, user, notify }) {
     setUserForm({
       name: selectedUser.name || "",
       username: selectedUser.username || "",
+      dialerUser: selectedUser.dialerUser || "",
       password: "",
       isActive: selectedUser.isActive !== false,
       roles: selectedUser.roles?.length ? selectedUser.roles : ["agent"],
@@ -1330,6 +1384,7 @@ function AdminContent({ activeMenu, user, notify }) {
       const payload = {
         name: userForm.name,
         username: userForm.username,
+        dialerUser: userForm.dialerUser,
         password: userForm.password.trim(),
         isActive: userForm.isActive,
         roles: userForm.roles.filter(Boolean),
@@ -1529,6 +1584,81 @@ function AdminContent({ activeMenu, user, notify }) {
                   searchPlaceholder="Search sessions"
                 />
               </article>
+            </section>
+
+            <section className="admin-card admin-card--wide">
+              <h2>Agent CRM Activity</h2>
+              <DataTable
+                columns={[
+                  {
+                    key: "name",
+                    label: "Agent",
+                    render: (activity) => (
+                      <strong>
+                        {activity.name || activity.username || "-"}
+                        {activity.active && <span className="activity-live-dot">Live</span>}
+                      </strong>
+                    ),
+                    searchValue: (activity) => `${activity.name || ""} ${activity.username || ""}`,
+                  },
+                  {
+                    key: "firstLoginAt",
+                    label: "First login",
+                    render: (activity) => formatDateTime(activity.firstLoginAt),
+                    sortValue: (activity) => activity.firstLoginAt || "",
+                  },
+                  {
+                    key: "lastLogoutAt",
+                    label: "Last logout",
+                    render: (activity) =>
+                      activity.active ? "Active" : formatDateTime(activity.lastLogoutAt),
+                    sortValue: (activity) => activity.lastLogoutAt || "",
+                  },
+                  {
+                    key: "spanMinutes",
+                    label: "Login to logout",
+                    render: (activity) => formatMinutes(activity.spanMinutes),
+                    sortValue: (activity) => activity.spanMinutes || 0,
+                  },
+                  {
+                    key: "totalWorkMinutes",
+                    label: "Work",
+                    render: (activity) => formatMinutes(activity.totalWorkMinutes),
+                    sortValue: (activity) => activity.totalWorkMinutes || 0,
+                  },
+                  {
+                    key: "totalIdleMinutes",
+                    label: "Idle",
+                    render: (activity) => formatMinutes(activity.totalIdleMinutes),
+                    sortValue: (activity) => activity.totalIdleMinutes || 0,
+                  },
+                  {
+                    key: "punchCount",
+                    label: "Punches",
+                    render: (activity) => activity.punchCount || 0,
+                    sortValue: (activity) => activity.punchCount || 0,
+                  },
+                  {
+                    key: "punches",
+                    label: "Login - Logout",
+                    searchable: false,
+                    sortable: false,
+                    render: (activity) => (
+                      <span className="activity-punch-summary">
+                        {(activity.punches || []).map((punch, index) => (
+                          <span key={`${activity.userId}-${punch.loginAt}-${index}`}>
+                            {formatDateTime(punch.loginAt)} - {punch.logoutAt ? formatDateTime(punch.logoutAt) : "Active"}
+                          </span>
+                        ))}
+                      </span>
+                    ),
+                  },
+                ]}
+                emptyText="No CRM activity punches found for today."
+                pageSize={8}
+                rows={dashboard?.agentActivities || []}
+                searchPlaceholder="Search agent activity"
+              />
             </section>
 
             <section className="admin-card admin-card--wide">
@@ -1805,6 +1935,16 @@ function AdminContent({ activeMenu, user, notify }) {
                 />
               </label>
               <label className="form-field">
+                <span>Dialer User</span>
+                <input
+                  onChange={(event) =>
+                    updateUserForm("dialerUser", event.target.value)
+                  }
+                  required
+                  value={userForm.dialerUser}
+                />
+              </label>
+              <label className="form-field">
                 <span>
                   {userFormMode === "edit" ? "New Password" : "Password"}
                 </span>
@@ -1885,6 +2025,7 @@ function AdminContent({ activeMenu, user, notify }) {
                 render: (managedUser) => <strong>{managedUser.name || "-"}</strong>,
               },
               { key: "username", label: "Username" },
+              { key: "dialerUser", label: "Dialer User" },
               {
                 key: "roles",
                 label: "Role",

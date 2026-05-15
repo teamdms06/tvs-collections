@@ -388,6 +388,14 @@ public class UploadFileDataService {
     @Transactional
     public void addFeedback(String productCode, Long id, String agentEmail, FeedbackRequestDto feedbackDto) {
         System.out.println("\n\n Adding feedback for lead ID: " + id + " by agent: " + agentEmail + " with feedback: " + feedbackDto+"\n\n");
+        String feedbackUid = textOrNull(feedbackDto.uid);
+        if (feedbackUid == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "UID is required");
+        }
+        if (!feedbackUid.matches("[A-Za-z]\\d{19}")) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "UID must start with 1 letter followed by 19 digits");
+        }
+
         UploadFileData lead = getLeadEntityById(productCode, id);
         User agent = userRepository.findByUsername(agentEmail)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Agent not found"));
@@ -395,6 +403,7 @@ public class UploadFileDataService {
         Feedback feedback = new Feedback();
         feedback.uploadFileData = lead;
         feedback.agent = agent;
+        feedback.uid = feedbackUid;
         feedback.disposition = textOrNull(feedbackDto.disposition);
         feedback.subDisposition = textOrNull(feedbackDto.subDisposition);
         feedback.paymentMode = textOrNull(feedbackDto.paymentMode);
@@ -414,9 +423,7 @@ public class UploadFileDataService {
         feedback.remark = textOrNull(feedbackDto.remark);
 
         Feedback saved = feedbackRepository.save(feedback);
-        if (textOrNull(feedbackDto.uid) != null) {
-            lead.uid = textOrNull(feedbackDto.uid);
-        }
+        lead.uid = feedbackUid;
         lead.latestFeedback = saved;
         uploadFileDataRepository.save(lead);
     }

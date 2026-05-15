@@ -83,6 +83,7 @@ public class AdminUserService {
         User user = new User();
         user.name = request.name.trim();
         user.username = request.username.trim();
+        user.dialerUser = request.dialerUser.trim();
         user.email = email;
         user.passwordHash = passwordEncoder.encode(request.password);
         user.isActive = request.isActive == null || Boolean.TRUE.equals(request.isActive);
@@ -107,6 +108,7 @@ public class AdminUserService {
 
         user.name = request.name.trim();
         user.username = request.username.trim();
+        user.dialerUser = request.dialerUser.trim();
         if (StringUtils.hasText(request.email)) {
             String email = request.email.trim();
             userRepository.findByEmail(email)
@@ -146,6 +148,10 @@ public class AdminUserService {
 
         if (!StringUtils.hasText(request.username)) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Username is required");
+        }
+
+        if (!StringUtils.hasText(request.dialerUser)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Dialer user is required");
         }
 
         if (requirePassword && !StringUtils.hasText(request.password)) {
@@ -314,6 +320,7 @@ public class AdminUserService {
                 user.id,
                 user.name,
                 user.username,
+                user.dialerUser,
                 user.email,
                 user.isActive,
                 user.createdAt,

@@ -3,7 +3,9 @@ package com.tvscollections.backend.controller;
 import com.tvscollections.backend.dto.AuthLoginRequest;
 import com.tvscollections.backend.dto.AuthLoginResponse;
 import com.tvscollections.backend.service.ActiveUserTrackerService;
+import com.tvscollections.backend.service.AgentActivityService;
 import com.tvscollections.backend.service.AuthService;
+import com.tvscollections.backend.security.UserPrincipal;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.AuthenticationException;
@@ -20,10 +22,14 @@ public class AuthController {
 
     private final AuthService authService;
     private final ActiveUserTrackerService activeUserTrackerService;
+    private final AgentActivityService agentActivityService;
 
-    public AuthController(AuthService authService, ActiveUserTrackerService activeUserTrackerService) {
+    public AuthController(AuthService authService,
+                          ActiveUserTrackerService activeUserTrackerService,
+                          AgentActivityService agentActivityService) {
         this.authService = authService;
         this.activeUserTrackerService = activeUserTrackerService;
+        this.agentActivityService = agentActivityService;
     }
 
     @PostMapping("/login")
@@ -44,6 +50,9 @@ public class AuthController {
         try {
             if (SecurityContextHolder.getContext().getAuthentication() != null
                     && !(SecurityContextHolder.getContext().getAuthentication() instanceof AnonymousAuthenticationToken)) {
+                if (SecurityContextHolder.getContext().getAuthentication().getPrincipal() instanceof UserPrincipal userPrincipal) {
+                    agentActivityService.recordLogout(userPrincipal.getUser());
+                }
                 activeUserTrackerService.markInactive(
                         SecurityContextHolder.getContext().getAuthentication().getName()
                 );

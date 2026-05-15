@@ -20,6 +20,14 @@ public class DatabaseSchemaConfig {
             System.out.println("Upload status schema check skipped: " + error.getMessage());
         }
 
+        addColumnIfMissing(
+                "feedback",
+                "uid",
+                "VARCHAR(50)"
+        );
+
+        createAgentActivitySessionsTableIfMissing();
+
         createIndexIfMissing(
                 "upload_file_data",
                 "idx_upload_file_data_product_mobile",
@@ -70,6 +78,42 @@ public class DatabaseSchemaConfig {
                 "idx_feedback_agent_created_at",
                 "agent_id, created_at"
         );
+        createIndexIfMissing(
+                "agent_activity_sessions",
+                "idx_agent_activity_user_date",
+                "user_id, activity_date"
+        );
+        createIndexIfMissing(
+                "agent_activity_sessions",
+                "idx_agent_activity_login",
+                "login_at"
+        );
+        createIndexIfMissing(
+                "agent_activity_sessions",
+                "idx_agent_activity_logout",
+                "logout_at"
+        );
+    }
+
+    private void createAgentActivitySessionsTableIfMissing() {
+        try {
+            jdbcTemplate.execute("""
+                    CREATE TABLE IF NOT EXISTS agent_activity_sessions (
+                        id BIGINT NOT NULL AUTO_INCREMENT,
+                        user_id BIGINT NOT NULL,
+                        activity_date DATE NOT NULL,
+                        login_at DATETIME NOT NULL,
+                        logout_at DATETIME NULL,
+                        last_activity_at DATETIME NOT NULL,
+                        idle_seconds BIGINT NOT NULL DEFAULT 0,
+                        PRIMARY KEY (id),
+                        CONSTRAINT fk_agent_activity_user
+                            FOREIGN KEY (user_id) REFERENCES users(id)
+                    )
+                    """);
+        } catch (Exception error) {
+            System.out.println("Agent activity schema check skipped: " + error.getMessage());
+        }
     }
 
     private void createIndexIfMissing(String tableName, String indexName, String columns) {
@@ -94,6 +138,31 @@ public class DatabaseSchemaConfig {
             jdbcTemplate.execute("CREATE INDEX " + indexName + " ON " + tableName + " (" + columns + ")");
         } catch (Exception error) {
             System.out.println("Index schema check skipped for " + indexName + ": " + error.getMessage());
+        }
+    }
+
+    private void addColumnIfMissing(String tableName, String columnName, String definition) {
+        try {
+            Integer columnCount = jdbcTemplate.queryForObject(
+                    """
+                            SELECT COUNT(1)
+                            FROM information_schema.columns
+                            WHERE table_schema = DATABASE()
+                              AND table_name = ?
+                              AND column_name = ?
+                            """,
+                    Integer.class,
+                    tableName,
+                    columnName
+            );
+
+            if (columnCount == null || columnCount > 0) {
+                return;
+            }
+
+            jdbcTemplate.execute("ALTER TABLE " + tableName + " ADD COLUMN " + columnName + " " + definition);
+        } catch (Exception error) {
+            System.out.println("Column schema check skipped for " + tableName + "." + columnName + ": " + error.getMessage());
         }
     }
 }

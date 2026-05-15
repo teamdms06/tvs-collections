@@ -6,6 +6,7 @@ import ConsumerDurablePage from "./pages/ConsumerDurablePage";
 import LoginPage from "./pages/LoginPage";
 import RetailPage from "./pages/RetailPage";
 import { API_BASE_URL } from "./api/config";
+import { markUserActivity } from "./api/leads";
 
 const agentPages = {
   consumer: ConsumerDurablePage,
@@ -14,6 +15,7 @@ const agentPages = {
 };
 
 const INACTIVITY_TIMEOUT_MS = 30 * 60 * 1000;
+const ACTIVITY_HEARTBEAT_MS = 60 * 1000;
 const ACTIVITY_STORAGE_KEY = "lastActivityAt";
 
 function App() {
@@ -65,6 +67,11 @@ function App() {
     }
 
     let timeoutId;
+    let lastHeartbeatAt = 0;
+    const isAdminUser = currentUser.roles?.some((role) => {
+      const normalizedRole = role?.trim().toLowerCase();
+      return normalizedRole === "admin" || normalizedRole === "role_admin";
+    });
     const activityEvents = ["click", "keydown", "mousemove", "scroll", "touchstart"];
 
     const scheduleLogout = () => {
@@ -79,7 +86,14 @@ function App() {
     };
 
     const markActivity = () => {
+      const now = Date.now();
       localStorage.setItem(ACTIVITY_STORAGE_KEY, String(Date.now()));
+      if (!isAdminUser && now - lastHeartbeatAt >= ACTIVITY_HEARTBEAT_MS) {
+        lastHeartbeatAt = now;
+        markUserActivity().catch((error) => {
+          console.error("Activity tracking failed:", error);
+        });
+      }
       scheduleLogout();
     };
 

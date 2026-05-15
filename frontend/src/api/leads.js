@@ -92,6 +92,15 @@ export async function getUserDashboard() {
   return parseResponse(response);
 }
 
+export async function markUserActivity() {
+  const response = await fetch(`${API_BASE_URL}/user/activity`, {
+    method: "POST",
+    headers: getAuthHeaders(),
+  });
+
+  return parseResponse(response);
+}
+
 export async function saveConsumerFeedback(
   leadId,
   feedback,

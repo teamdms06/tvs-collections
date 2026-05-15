@@ -10,6 +10,7 @@ public class FeedbackHistoryDto {
     @JsonIgnore
     public Long uploadFileDataId;
     public String date;
+    public String uid;
     public String disposition;
     public String subDisposition;
     public String paymentMode;
@@ -31,13 +32,14 @@ public class FeedbackHistoryDto {
                               String callBackTime,
                               String alternateMobileNumber,
                               String remark) {
-        this(id, null, createdAt, disposition, subDisposition, paymentMode, ptpAmount, ptpDate, callBackDate,
+        this(id, null, createdAt, null, disposition, subDisposition, paymentMode, ptpAmount, ptpDate, callBackDate,
                 callBackTime, alternateMobileNumber, remark);
     }
 
     public FeedbackHistoryDto(Long id,
                               Long uploadFileDataId,
                               LocalDateTime createdAt,
+                              String uid,
                               String disposition,
                               String subDisposition,
                               String paymentMode,
@@ -50,6 +52,7 @@ public class FeedbackHistoryDto {
         this.id = id;
         this.uploadFileDataId = uploadFileDataId;
         this.date = createdAt == null ? null : createdAt.toString();
+        this.uid = uid;
         this.disposition = disposition;
         this.subDisposition = subDisposition;
         this.paymentMode = paymentMode;
@@ -66,6 +69,7 @@ public class FeedbackHistoryDto {
                 feedback.id,
                 feedback.uploadFileData == null ? null : feedback.uploadFileData.id,
                 feedback.createdAt,
+                feedback.uid,
                 feedback.disposition,
                 feedback.subDisposition,
                 feedback.paymentMode,

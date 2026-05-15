@@ -31,6 +31,9 @@ public class Feedback {
     @JsonIgnore
     public User agent;
 
+    @Column(length = 50)
+    public String uid;
+
     @Column(length = 100)
     public String disposition;
 

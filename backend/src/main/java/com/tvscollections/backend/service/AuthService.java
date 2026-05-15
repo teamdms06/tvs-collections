@@ -20,17 +20,20 @@ public class AuthService {
     private final UserRepository userRepository;
     private final ProductAccessService productAccessService;
     private final ActiveUserTrackerService activeUserTrackerService;
+    private final AgentActivityService agentActivityService;
 
     public AuthService(AuthenticationManager authenticationManager,
                        JwtUtils jwtUtils,
                        UserRepository userRepository,
                        ProductAccessService productAccessService,
-                       ActiveUserTrackerService activeUserTrackerService) {
+                       ActiveUserTrackerService activeUserTrackerService,
+                       AgentActivityService agentActivityService) {
         this.authenticationManager = authenticationManager;
         this.jwtUtils = jwtUtils;
         this.userRepository = userRepository;
         this.productAccessService = productAccessService;
         this.activeUserTrackerService = activeUserTrackerService;
+        this.agentActivityService = agentActivityService;
     }
 
     public AuthLoginResponse login(String username, String password) {
@@ -51,9 +54,10 @@ public class AuthService {
             activeUserTrackerService.markInactive(user.username);
         } else {
             activeUserTrackerService.markActive(user.username);
+            agentActivityService.recordLogin(user);
         }
 
-        return new AuthLoginResponse(token, user.id, user.name, user.email, user.username, roles, accessProducts);
+        return new AuthLoginResponse(token, user.id, user.name, user.email, user.username, user.dialerUser, roles, accessProducts);
     }
 
     private boolean hasAdminRole(List<String> roles) {

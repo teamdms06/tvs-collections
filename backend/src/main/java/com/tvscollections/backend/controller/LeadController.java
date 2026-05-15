@@ -46,6 +46,17 @@ public class LeadController {
         }
     }
 
+    @PostMapping("/user/activity")
+    public ResponseEntity<?> markUserActivity() {
+        try {
+            return ResponseEntity.ok(userDashboardService.recordActivityAndGetDashboard(getCurrentUser().getUser()));
+        } catch (ResponseStatusException error) {
+            return handleControllerError("Mark user activity failed", error);
+        } catch (Exception error) {
+            return handleControllerError("Mark user activity failed", error);
+        }
+    }
+
     @GetMapping("/{productKey}/leads/search")
     public ResponseEntity<?> searchLeads(@PathVariable("productKey") String productKey, @RequestParam("q") String query) {
         try {

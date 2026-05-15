@@ -87,17 +87,20 @@ public class AdminDashboardService {
     private final FeedbackRepository feedbackRepository;
     private final UserRepository userRepository;
     private final ActiveUserTrackerService activeUserTrackerService;
+    private final AgentActivityService agentActivityService;
 
     public AdminDashboardService(UploadFileRepository uploadFileRepository,
                                  UploadFileDataRepository uploadFileDataRepository,
                                  FeedbackRepository feedbackRepository,
                                  UserRepository userRepository,
-                                 ActiveUserTrackerService activeUserTrackerService) {
+                                 ActiveUserTrackerService activeUserTrackerService,
+                                 AgentActivityService agentActivityService) {
         this.uploadFileRepository = uploadFileRepository;
         this.uploadFileDataRepository = uploadFileDataRepository;
         this.feedbackRepository = feedbackRepository;
         this.userRepository = userRepository;
         this.activeUserTrackerService = activeUserTrackerService;
+        this.agentActivityService = agentActivityService;
     }
 
     @Transactional(readOnly = true)
@@ -118,6 +121,7 @@ public class AdminDashboardService {
                 LocalDateTime.now(),
                 uploadFileDataRepository.countLeadsByProduct(UploadStatus.inactive),
                 activeNonAdminUsers,
+                agentActivityService.getTodaySummaries(),
                 uploadFileRepository.findRecentUploads(PageRequest.of(0, 5))
         );
     }
@@ -277,7 +281,7 @@ public class AdminDashboardService {
         }
 
         int column = 0;
-        row.createCell(column++).setCellValue(textValue(leadText(lead, "uid")));
+        row.createCell(column++).setCellValue(textValue(feedbackUid(feedback, lead)));
         row.createCell(column++).setCellValue(textValue(leadText(lead, "listId")));
         row.createCell(column++).setCellValue(textValue(feedback.createdAt == null ? null : feedback.createdAt.toLocalDate()));
         row.createCell(column++).setCellValue(textValue(feedback.createdAt == null ? null : feedback.createdAt.toLocalTime()));
@@ -320,7 +324,7 @@ public class AdminDashboardService {
 
     private void writeFeedbackExportRowWithoutLead(Row row, Feedback feedback) {
         int column = 0;
-        row.createCell(column++).setCellValue("");
+        row.createCell(column++).setCellValue(textValue(feedbackUid(feedback, null)));
         row.createCell(column++).setCellValue("");
         row.createCell(column++).setCellValue(textValue(feedback.createdAt == null ? null : feedback.createdAt.toLocalDate()));
         row.createCell(column++).setCellValue(textValue(feedback.createdAt == null ? null : feedback.createdAt.toLocalTime()));
@@ -367,6 +371,14 @@ public class AdminDashboardService {
         }
 
         return feedback.agent.name;
+    }
+
+    private String feedbackUid(Feedback feedback, UploadFileData lead) {
+        if (feedback != null && feedback.uid != null && !feedback.uid.isBlank()) {
+            return feedback.uid;
+        }
+
+        return leadText(lead, "uid");
     }
 
     private String leadText(UploadFileData lead, String fieldName) {

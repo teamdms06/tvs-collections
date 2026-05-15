@@ -1044,7 +1044,8 @@
   gap: 12px;
 }
 
-.data-table__toolbar input {
+.data-table__toolbar input,
+.data-table__toolbar select {
   width: min(320px, 100%);
   min-height: 38px;
   box-sizing: border-box;
@@ -1055,6 +1056,24 @@
   padding: 8px 10px;
   font: inherit;
   font-size: 13px;
+}
+
+.data-table__toolbar select {
+  width: 82px;
+  padding-right: 8px;
+}
+
+.data-table__toolbar-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+}
+
+.data-table__toolbar-actions label {
+  display: flex;
+  align-items: center;
+  gap: 7px;
 }
 
 .data-table__toolbar span,
@@ -1253,6 +1272,14 @@
   font: inherit;
 }
 
+.search-mask-field {
+  position: relative;
+}
+
+.search-mask-field__input {
+  width: 100%;
+}
+
 .notice {
   grid-column: 1 / -1;
   margin: 0;
@@ -1418,6 +1445,66 @@
   color: #a72b19;
 }
 
+.assigned-call-loader {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 18px;
+  background: rgba(4, 23, 37, 0.48);
+  backdrop-filter: blur(4px);
+}
+
+.assigned-call-loader__panel {
+  width: min(360px, 100%);
+  border: 1px solid rgba(0, 119, 182, 0.18);
+  border-top: 4px solid #f59e0b;
+  border-radius: 10px;
+  background: #ffffff;
+  padding: 24px 22px;
+  color: #0d1b2a;
+  text-align: center;
+  box-shadow: 0 28px 80px rgba(4, 23, 37, 0.28);
+}
+
+.assigned-call-loader__spinner {
+  display: block;
+  width: 46px;
+  height: 46px;
+  margin: 0 auto 14px;
+  border: 4px solid #d9edf8;
+  border-top-color: #0077b6;
+  border-radius: 999px;
+  animation: assignedCallSpin 0.8s linear infinite;
+}
+
+.assigned-call-loader__panel strong {
+  display: block;
+  font-size: 18px;
+  font-weight: 900;
+}
+
+.assigned-call-loader__panel p {
+  margin: 8px 0 0;
+  color: #456272;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.assigned-call-loader__panel p span {
+  color: #0077b6;
+  font-family: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
+  font-weight: 900;
+}
+
+@keyframes assignedCallSpin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 .results-panel {
   display: grid;
   gap: 8px;
@@ -1568,6 +1655,77 @@
   color: #0d1b2a;
   font-size: 28px;
   line-height: 1.1;
+}
+
+.activity-punches {
+  display: grid;
+  gap: 10px;
+  border: 1px solid rgba(0, 78, 152, 0.14);
+  border-radius: 8px;
+  background: #fff;
+  padding: 14px;
+}
+
+.activity-punches__header,
+.activity-punch-row {
+  display: grid;
+  grid-template-columns: 40px repeat(2, minmax(140px, 1fr)) repeat(2, minmax(84px, auto));
+  gap: 10px;
+  align-items: center;
+}
+
+.activity-punches__header {
+  grid-template-columns: 1fr auto;
+  color: var(--theme-ink);
+}
+
+.activity-punches__header span,
+.activity-punch-row span,
+.activity-punch-row small {
+  color: var(--theme-muted);
+  font-size: 12px;
+  font-weight: 850;
+}
+
+.activity-punches__rows {
+  display: grid;
+  gap: 8px;
+}
+
+.activity-punch-row {
+  min-height: 44px;
+  border: 1px solid rgba(0, 78, 152, 0.1);
+  border-radius: 7px;
+  background: #f8fcfd;
+  padding: 8px 10px;
+}
+
+.activity-punch-row strong {
+  color: var(--theme-blue);
+  font-size: 13px;
+}
+
+.activity-live-dot {
+  display: inline-flex;
+  align-items: center;
+  margin-left: 8px;
+  border: 1px solid rgba(20, 187, 166, 0.34);
+  border-radius: 999px;
+  background: var(--theme-soft-cyan);
+  color: #047c6f;
+  padding: 2px 7px;
+  font-size: 10px;
+  font-weight: 950;
+  text-transform: uppercase;
+}
+
+.activity-punch-summary {
+  display: grid;
+  gap: 4px;
+  min-width: 260px;
+  color: var(--theme-muted);
+  font-size: 11px;
+  font-weight: 800;
 }
 
 .eyebrow {
@@ -3279,6 +3437,7 @@ button {
   .admin-grid,
   .dialer-stat-grid,
   .admin-table,
+  .activity-punch-row,
   .user-dashboard__grid {
     grid-template-columns: 1fr;
   }

@@ -5,6 +5,7 @@ import {
   saveConsumerFeedback,
   searchConsumerLeads,
 } from "../api/leads";
+import { getMyDialerAgentStatus } from "../api/dialer";
 
 const initialFeedback = {
   uid: "",
@@ -18,7 +19,7 @@ const initialFeedback = {
 const paymentDispositionFields = ["amount", "actionDate", "paymentMode"];
 const paidToFields = ["paidToName", "paidToContact", "paidShowroom"];
 const callBackFields = ["callBackDate", "callBackTime"];
-const refusalFields = ["nonPaymentReason", "customerBouncingReason"];
+const refusalFields = ["nonPaymentReason"];
 
 const FEEDBACK_FIELDS_BY_SUB_DISPOSITION = {
   OCP: [
@@ -113,12 +114,17 @@ const REQUIRED_FIELDS_BY_SUB_DISPOSITION = {
   CLBK_P: ["callBackDate", "callBackTime", "remark"],
   LMG: ["remark"],
   CD: ["remark"],
-  RTP: ["nonPaymentReason", "customerBouncingReason", "remark"],
+  RTP: ["nonPaymentReason", "remark"],
   WRNG: ["remark"],
 };
 
 const alwaysSubmittedFields = ["disposition", "subDisposition"];
 const alwaysVisibleFeedbackFields = ["uid"];
+const WEBHOOK_SOCKET_URL = import.meta.env.VITE_WEBHOOK_SOCKET_URL || "http://192.168.114.241:3001";
+const AGENT_CALL_STATUS_ATTEMPTS = 8;
+const AGENT_CALL_STATUS_RETRY_MS = 1000;
+const ASSIGNED_CALL_SEARCH_DELAY_MS = 3000;
+const DIALER_SCRIPT_ID = "vd-dialer-script";
 
 function cleanFeedbackValue(value) {
   const cleanedValue = value == null ? "" : String(value).trim();
@@ -131,6 +137,82 @@ function cleanUidValue(value) {
   return match ? match[0] : cleanedValue.replace(/^:+/, "").trim();
 }
 
+function normalizePhoneValue(value) {
+  return String(value || "").replace(/\D/g, "");
+}
+
+function getComparablePhoneValue(value) {
+  const phoneValue = normalizePhoneValue(value);
+  return phoneValue.length > 10 ? phoneValue.slice(-10) : phoneValue;
+}
+
+function loadSocketIoClient(serverUrl) {
+  if (window.io) {
+    return Promise.resolve(window.io);
+  }
+
+  const existingScript = document.querySelector(`script[data-socket-io-client="${serverUrl}"]`);
+
+  if (existingScript) {
+    return new Promise((resolve, reject) => {
+      existingScript.addEventListener("load", () => resolve(window.io), { once: true });
+      existingScript.addEventListener("error", reject, { once: true });
+    });
+  }
+
+  return new Promise((resolve, reject) => {
+    const script = document.createElement("script");
+    script.src = `${serverUrl}/socket.io/socket.io.js`;
+    script.async = true;
+    script.dataset.socketIoClient = serverUrl;
+    script.onload = () => resolve(window.io);
+    script.onerror = reject;
+    document.head.appendChild(script);
+  });
+}
+
+function parseDialerAgentStatusCsv(text) {
+  const rows = String(text || "")
+    .trim()
+    .split("\n")
+    .map((line) => line.split(",").map((part) => part.trim()))
+    .filter((parts) => parts.some(Boolean));
+
+  if (rows.length === 0) {
+    return null;
+  }
+
+  const headerRow = rows[0].map((header) => header.toLowerCase());
+  const valueRow = headerRow.includes("status") ? rows[1] : rows[0];
+
+  if (!valueRow) {
+    return null;
+  }
+
+  const fieldNames = headerRow.includes("status")
+    ? headerRow
+    : [
+        "status",
+        "callerid",
+        "lead_id",
+        "campaign_id",
+        "calls_today",
+        "full_name",
+        "user_group",
+        "user_level",
+        "pause_code",
+        "real_time_sub_status",
+        "phone_number",
+        "vendor_lead_code",
+        "session_id",
+      ];
+
+  return fieldNames.reduce((detail, fieldName, index) => {
+    detail[fieldName] = valueRow[index] || "";
+    return detail;
+  }, {});
+}
+
 function cleanAlternateMobileValue(value) {
   const cleanedValue = cleanFeedbackValue(value);
   return cleanedValue === "0" ? "" : cleanedValue;
@@ -139,14 +221,13 @@ function cleanAlternateMobileValue(value) {
 function createInitialFeedback(config, lead = {}) {
   const values = {
     ...initialFeedback,
-    uid: cleanUidValue(lead.uid),
+    uid: "",
     status: "",
     disposition: "",
     subDisposition: cleanFeedbackValue(lead.bestDispoInternal),
     paymentMode: "",
     reason: "",
     nonPaymentReason: "",
-    customerBouncingReason: "",
   };
 
   for (const field of config.editableFields || []) {
@@ -181,6 +262,10 @@ function getFeedbackValue(feedbackValues, activeFieldNames, name) {
     : "";
 }
 
+function requiresNonPaymentReason(disposition) {
+  return ["Positive", "Contacted"].includes(disposition);
+}
+
 function toFeedbackRequest(feedbackValues, activeFieldNames) {
   return {
     uid: cleanUidValue(feedbackValues.uid),
@@ -190,15 +275,11 @@ function toFeedbackRequest(feedbackValues, activeFieldNames) {
       getFeedbackValue(feedbackValues, activeFieldNames, "paymentMode"),
     ),
     nonPaymentReason: cleanFeedbackValue(
-      getFeedbackValue(feedbackValues, activeFieldNames, "nonPaymentReason"),
+      requiresNonPaymentReason(feedbackValues.disposition)
+        ? feedbackValues.nonPaymentReason
+        : getFeedbackValue(feedbackValues, activeFieldNames, "nonPaymentReason"),
     ),
-    bouncingReason: cleanFeedbackValue(
-      getFeedbackValue(
-        feedbackValues,
-        activeFieldNames,
-        "customerBouncingReason",
-      ),
-    ),
+    bouncingReason: "",
     ptpAmount: getFeedbackValue(feedbackValues, activeFieldNames, "amount")
       ? Number(feedbackValues.amount)
       : null,
@@ -314,6 +395,13 @@ function getValidationErrors(
     errors.push("UID must start with 1 letter followed by 19 digits");
   }
 
+  if (
+    requiresNonPaymentReason(feedbackValues.disposition) &&
+    !cleanFeedbackValue(feedbackValues.nonPaymentReason)
+  ) {
+    errors.push("Non Payment Reason");
+  }
+
   return errors;
 }
 
@@ -334,7 +422,7 @@ function maskMobileNumber(value) {
   }
 
   if (digits.length <= 4) {
-    return "*".repeat(digits.length);
+    return digits;
   }
 
   return `${"*".repeat(digits.length - 4)}${digits.slice(-4)}`;
@@ -381,12 +469,24 @@ function formatWorkingMinutes(minutes) {
 function UserDashboard({ dashboard, fallbackName, loading, error }) {
   const stats = [
     {
-      label: "Login time",
+      label: "First login",
       value: formatDateTime(dashboard?.loginTime),
     },
     {
-      label: "Today working hours",
+      label: "Last logout",
+      value: formatDateTime(dashboard?.logoutTime),
+    },
+    {
+      label: "Work duration",
       value: formatWorkingMinutes(dashboard?.todayWorkingMinutes),
+    },
+    {
+      label: "Idle time",
+      value: formatWorkingMinutes(dashboard?.todayIdleMinutes),
+    },
+    {
+      label: "First login to last logout",
+      value: formatWorkingMinutes(dashboard?.totalSpanMinutes),
     },
     {
       label: "Today's call attempts",
@@ -418,6 +518,26 @@ function UserDashboard({ dashboard, fallbackName, loading, error }) {
         ))}
       </div>
       <p>Search and open a lead to start feedback.</p>
+      <div className="activity-punches" aria-label="Login logout punches">
+        <div className="activity-punches__header">
+          <strong>Login - Logout Punches</strong>
+          <span>{dashboard?.activity?.punchCount || 0} today</span>
+        </div>
+        <div className="activity-punches__rows">
+          {(dashboard?.activity?.punches || []).length === 0 && (
+            <p>No punches recorded yet.</p>
+          )}
+          {(dashboard?.activity?.punches || []).map((punch, index) => (
+            <div className="activity-punch-row" key={`${punch.loginAt}-${index}`}>
+              <span>{index + 1}</span>
+              <strong>{formatDateTime(punch.loginAt)}</strong>
+              <strong>{punch.logoutAt ? formatDateTime(punch.logoutAt) : "Active"}</strong>
+              <small>{formatWorkingMinutes(punch.workMinutes)} work</small>
+              <small>{formatWorkingMinutes(punch.idleMinutes)} idle</small>
+            </div>
+          ))}
+        </div>
+      </div>
     </section>
   );
 }
@@ -504,6 +624,7 @@ function normalizeHistoryItem(item) {
   const normalized = {
     id: item.id,
     date: item.date || item.createdAt || item.created_at || "",
+    uid: item.uid || "",
     disposition: item.disposition || "",
     subDisposition: item.subDisposition || item.sub_disposition || "",
     remark: item.remark || "",
@@ -512,6 +633,7 @@ function normalizeHistoryItem(item) {
   const hasDisplayValue = [
     normalized.id,
     normalized.date,
+    normalized.uid,
     normalized.disposition,
     normalized.subDisposition,
     normalized.remark,
@@ -534,6 +656,7 @@ function TextField({ field, value, onChange }) {
         minLength={field.minLength}
         maxLength={field.maxLength}
         required={field.required}
+        readOnly={field.readOnly}
         onChange={(event) => onChange(field.name, event.target.value)}
       />
       <small>{field.help}</small>
@@ -606,12 +729,16 @@ export default function LeadFeedbackPage({ config, onLogout, user }) {
   const [activeLead, setActiveLead] = useState(null);
   const [previewLead, setPreviewLead] = useState(null);
   const [searchQuery, setSearchQuery] = useState("");
+  const [searchDisplayQuery, setSearchDisplayQuery] = useState("");
   const [searchResults, setSearchResults] = useState([]);
   const [feedbackValues, setFeedbackValues] = useState(() =>
     createInitialFeedback(config),
   );
   const [loading, setLoading] = useState(false);
   const [redirectingAfterSubmit, setRedirectingAfterSubmit] = useState(false);
+  const [assignedUidReadOnly, setAssignedUidReadOnly] = useState(false);
+  const [pendingAssignedCallDetail, setPendingAssignedCallDetail] = useState(null);
+  const [assignedCallLoader, setAssignedCallLoader] = useState(null);
   const [notice, setNotice] = useState(null);
   const [dashboard, setDashboard] = useState(null);
   const [dashboardLoading, setDashboardLoading] = useState(true);
@@ -651,6 +778,46 @@ export default function LeadFeedbackPage({ config, onLogout, user }) {
     };
   }, []);
 
+  useEffect(() => {
+    let isMounted = true;
+
+    const appendDialerScript = () => {
+      if (!isMounted || document.getElementById(DIALER_SCRIPT_ID)) {
+        return;
+      }
+
+      const script = document.createElement("script");
+      script.id = DIALER_SCRIPT_ID;
+      script.src = `${import.meta.env.BASE_URL}dialerJs.js`;
+      script.async = false;
+      document.body.appendChild(script);
+    };
+
+    loadSocketIoClient(WEBHOOK_SOCKET_URL)
+      .then(appendDialerScript)
+      .catch((error) => {
+        console.warn("[Campaign Webhook] Socket.IO client could not be loaded before dialer UI:", error);
+        appendDialerScript();
+      });
+
+    return () => {
+      isMounted = false;
+      [
+        DIALER_SCRIPT_ID,
+        "vd-dialerStyle",
+        "vd-dialerToggle",
+        "vd-incomingCall",
+        "vd-dialerPanel",
+        "vd-dispositionModal",
+        "vd-pauseModal",
+      ].forEach((elementId) => {
+        document.getElementById(elementId)?.remove();
+      });
+
+      delete window.dialerAPI;
+    };
+  }, []);
+
   useEffect(
     () => () => {
       if (submitRedirectTimerRef.current) {
@@ -659,6 +826,102 @@ export default function LeadFeedbackPage({ config, onLogout, user }) {
     },
     [],
   );
+
+  useEffect(() => {
+    let socket;
+    let isMounted = true;
+    const retryTimers = [];
+
+    const logAssignedCallDetail = async (callData, attempt = 1) => {
+      try {
+        const agentStatus = parseDialerAgentStatusCsv(await getMyDialerAgentStatus());
+        const webhookMobileNumber = getComparablePhoneValue(callData?.caller);
+        const agentMobileNumber = getComparablePhoneValue(agentStatus?.phone_number);
+        const isMatchingAssignedCall =
+          agentStatus?.status?.toUpperCase() === "INCALL" &&
+          webhookMobileNumber &&
+          agentMobileNumber === webhookMobileNumber;
+
+        if (isMatchingAssignedCall) {
+          console.log(
+            `[Campaign Webhook] Selected agent live call detail: ${user.dialerUser || user.username} (${agentStatus.full_name || user.name})`,
+            {
+              agentName: agentStatus.full_name || user.name,
+              mobileNumber: agentStatus.phone_number || callData.caller,
+              callerId: agentStatus.callerid,
+              vendorLeadCode: agentStatus.vendor_lead_code,
+            },
+          );
+          setPendingAssignedCallDetail({
+            callerId: agentStatus.callerid,
+            vendorLeadCode: agentStatus.vendor_lead_code,
+          });
+          return;
+        }
+
+        if (attempt < AGENT_CALL_STATUS_ATTEMPTS) {
+          retryTimers.push(
+            window.setTimeout(
+              () => logAssignedCallDetail(callData, attempt + 1),
+              AGENT_CALL_STATUS_RETRY_MS,
+            ),
+          );
+        } else if (agentStatus?.status?.toUpperCase() === "INCALL") {
+          console.warn(
+            "[Campaign Webhook] Agent is INCALL, but phone number did not match webhook caller.",
+            {
+              webhookMobileNumber,
+              agentMobileNumber,
+              agentName: agentStatus.full_name || user.name,
+              callerId: agentStatus.callerid,
+              vendorLeadCode: agentStatus.vendor_lead_code,
+            },
+          );
+        }
+      } catch (error) {
+        if (attempt < AGENT_CALL_STATUS_ATTEMPTS) {
+          retryTimers.push(
+            window.setTimeout(
+              () => logAssignedCallDetail(callData, attempt + 1),
+              AGENT_CALL_STATUS_RETRY_MS,
+            ),
+          );
+        } else {
+          console.warn("[Campaign Webhook] Could not fetch assigned call detail.", error.message);
+        }
+      }
+    };
+
+    loadSocketIoClient(WEBHOOK_SOCKET_URL)
+      .then((io) => {
+        if (!isMounted || !io) {
+          return;
+        }
+
+        socket = io(WEBHOOK_SOCKET_URL);
+        socket.on("connect", () => {
+          console.log("[Campaign Webhook] Agent listener connected", WEBHOOK_SOCKET_URL);
+        });
+        socket.on("campaign_call_observed", (callData) => {
+          logAssignedCallDetail(callData);
+        });
+        socket.on("connect_error", (error) => {
+          console.warn("[Campaign Webhook] Agent listener connection failed:", error.message);
+        });
+      })
+      .catch((error) => {
+        console.warn("[Campaign Webhook] Socket.IO client could not be loaded:", error);
+      });
+
+    return () => {
+      isMounted = false;
+      retryTimers.forEach((timerId) => window.clearTimeout(timerId));
+
+      if (socket) {
+        socket.disconnect();
+      }
+    };
+  }, [user.dialerUser, user.name, user.username]);
 
   const selectedGroup = useMemo(
     () =>
@@ -678,20 +941,16 @@ export default function LeadFeedbackPage({ config, onLogout, user }) {
     [feedbackValues.subDisposition],
   );
   const lead = activeLead || config.emptyLead;
-  const shouldShowUidField = !cleanUidValue(lead.uid);
   const requiredFieldNames = useMemo(() => {
     const nextRequiredFieldNames = new Set(baseRequiredFieldNames);
-
-    if (shouldShowUidField) {
-      nextRequiredFieldNames.add("uid");
-    }
-
+    nextRequiredFieldNames.add("uid");
     return nextRequiredFieldNames;
-  }, [baseRequiredFieldNames, shouldShowUidField]);
+  }, [baseRequiredFieldNames]);
   const editableFields = useMemo(
     () =>
       (config.editableFields || [])
         .filter((field) => field.name !== "reason")
+        .filter((field) => field.name !== "nonPaymentReason")
         .filter((field) => isActiveFeedbackField(activeFieldNames, field.name))
         .map((field) => ({
           ...field,
@@ -704,8 +963,79 @@ export default function LeadFeedbackPage({ config, onLogout, user }) {
     setPreviewLead(null);
     setSearchResults([]);
     setSearchQuery("");
+    setSearchDisplayQuery("");
     setFeedbackValues(createInitialFeedback(config));
+    setAssignedUidReadOnly(false);
     setNotice(null);
+  };
+
+  const updateSearchQuery = (value) => {
+    const nextValue = value == null ? "" : String(value);
+
+    if (/^\d+$/.test(nextValue)) {
+      setSearchQuery(nextValue);
+      setSearchDisplayQuery(maskMobileNumber(nextValue));
+      return;
+    }
+
+    setSearchQuery(nextValue);
+    setSearchDisplayQuery(nextValue);
+  };
+
+  const handleSearchChange = (event) => {
+    const nextDisplayValue = event.target.value;
+
+    if (!/^\d+$/.test(searchQuery) || !nextDisplayValue.includes("*")) {
+      updateSearchQuery(nextDisplayValue);
+    }
+  };
+
+  const handleSearchKeyDown = (event) => {
+    if (!/^\d+$/.test(searchQuery)) {
+      return;
+    }
+
+    const input = event.currentTarget;
+    const selectionStart = input.selectionStart ?? searchDisplayQuery.length;
+    const selectionEnd = input.selectionEnd ?? selectionStart;
+
+    if (/^\d$/.test(event.key)) {
+      event.preventDefault();
+      updateSearchQuery(
+        `${searchQuery.slice(0, selectionStart)}${event.key}${searchQuery.slice(selectionEnd)}`,
+      );
+      return;
+    }
+
+    if (event.key === "Backspace") {
+      event.preventDefault();
+      if (selectionStart !== selectionEnd) {
+        updateSearchQuery(`${searchQuery.slice(0, selectionStart)}${searchQuery.slice(selectionEnd)}`);
+      } else {
+        updateSearchQuery(`${searchQuery.slice(0, Math.max(0, selectionStart - 1))}${searchQuery.slice(selectionEnd)}`);
+      }
+      return;
+    }
+
+    if (event.key === "Delete") {
+      event.preventDefault();
+      if (selectionStart !== selectionEnd) {
+        updateSearchQuery(`${searchQuery.slice(0, selectionStart)}${searchQuery.slice(selectionEnd)}`);
+      } else {
+        updateSearchQuery(`${searchQuery.slice(0, selectionStart)}${searchQuery.slice(selectionEnd + 1)}`);
+      }
+    }
+  };
+
+  const handleSearchPaste = (event) => {
+    const pastedText = event.clipboardData.getData("text").trim();
+
+    if (!pastedText) {
+      return;
+    }
+
+    event.preventDefault();
+    updateSearchQuery(pastedText);
   };
 
   const onSearch = async (event) => {
@@ -736,11 +1066,12 @@ export default function LeadFeedbackPage({ config, onLogout, user }) {
     }
   };
 
-  const openLead = async (leadId) => {
+  const openLead = async (leadId, options = {}) => {
     setLoading(true);
     setNotice(null);
 
     try {
+      const uidOverride = cleanUidValue(options.uid);
       const fullLead = normalizeLead(
         await getConsumerLeadById(leadId, config.key),
       );
@@ -752,10 +1083,12 @@ export default function LeadFeedbackPage({ config, onLogout, user }) {
       setSearchResults([]);
       setFeedbackValues({
         ...createInitialFeedback(config, fullLead),
+        ...(uidOverride ? { uid: uidOverride } : {}),
         status: bestDispoGroup?.name || "",
         disposition: bestDispoGroup?.name || "",
         subDisposition: cleanFeedbackValue(fullLead.bestDispoInternal),
       });
+      setAssignedUidReadOnly(Boolean(uidOverride));
     } catch (error) {
       notify(error.message, "error");
     } finally {
@@ -763,7 +1096,77 @@ export default function LeadFeedbackPage({ config, onLogout, user }) {
     }
   };
 
+  useEffect(() => {
+    if (!pendingAssignedCallDetail) {
+      return undefined;
+    }
+
+    let isCancelled = false;
+
+    const openAssignedLead = async () => {
+      const vendorLeadCode = cleanFeedbackValue(pendingAssignedCallDetail.vendorLeadCode);
+      const callerId = cleanUidValue(pendingAssignedCallDetail.callerId);
+
+      if (!vendorLeadCode) {
+        setPendingAssignedCallDetail(null);
+        return;
+      }
+
+      updateSearchQuery(vendorLeadCode);
+      setAssignedCallLoader({ vendorLeadCode, callerId });
+      setLoading(true);
+      setNotice(null);
+
+      try {
+        await new Promise((resolve) =>
+          window.setTimeout(resolve, ASSIGNED_CALL_SEARCH_DELAY_MS),
+        );
+
+        if (isCancelled) {
+          return;
+        }
+
+        const results = await searchConsumerLeads(vendorLeadCode, config.key);
+        const normalizedResults = results.map(normalizeLead);
+
+        if (isCancelled) {
+          return;
+        }
+
+        setPreviewLead(null);
+        setSearchResults([]);
+
+        if (normalizedResults.length === 0) {
+          notify(`No record found for vendor lead code ${vendorLeadCode}.`, "warning");
+          return;
+        }
+
+        await openLead(normalizedResults[0].id, { uid: callerId });
+      } catch (error) {
+        if (!isCancelled) {
+          notify(error.message, "error");
+        }
+      } finally {
+        if (!isCancelled) {
+          setLoading(false);
+          setAssignedCallLoader(null);
+          setPendingAssignedCallDetail(null);
+        }
+      }
+    };
+
+    openAssignedLead();
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [pendingAssignedCallDetail]);
+
   const onFeedbackChange = (name, value) => {
+    if (name === "uid" && assignedUidReadOnly) {
+      return;
+    }
+
     setFeedbackValues((current) => {
       const nextValues = {
         ...current,
@@ -818,7 +1221,9 @@ export default function LeadFeedbackPage({ config, onLogout, user }) {
         setPreviewLead(null);
         setSearchResults([]);
         setSearchQuery("");
+        setSearchDisplayQuery("");
         setFeedbackValues(createInitialFeedback(config));
+        setAssignedUidReadOnly(false);
         setRedirectingAfterSubmit(false);
         submitRedirectTimerRef.current = null;
       }, 3000);
@@ -833,6 +1238,23 @@ export default function LeadFeedbackPage({ config, onLogout, user }) {
   return (
     <main className="workspace-shell app-workspace">
       <Toast notice={notice} onClose={() => setNotice(null)} />
+      {assignedCallLoader && (
+        <div
+          className="assigned-call-loader"
+          role="status"
+          aria-live="polite"
+          aria-label="Opening assigned call"
+        >
+          <div className="assigned-call-loader__panel">
+            <span className="assigned-call-loader__spinner" aria-hidden="true" />
+            <strong>Opening assigned call</strong>
+            <p>
+              Searching lead{" "}
+              <span>{assignedCallLoader.vendorLeadCode}</span>
+            </p>
+          </div>
+        </div>
+      )}
       <section className="app-shell app-shell--topbar">
         <header className="agent-topbar" aria-label="Agent workspace menu">
           <div className="agent-topbar__left">
@@ -857,11 +1279,18 @@ export default function LeadFeedbackPage({ config, onLogout, user }) {
           <form className="search-box agent-topbar__search" onSubmit={onSearch}>
             <label>
               {/* <span>Search record</span> */}
-              <input
-                onChange={(event) => setSearchQuery(event.target.value)}
-                placeholder="Mobile number or loan account number"
-                value={searchQuery}
-              />
+              <div className="search-mask-field">
+                <input
+                  autoComplete="off"
+                  className="search-mask-field__input"
+                  onChange={handleSearchChange}
+                  onKeyDown={handleSearchKeyDown}
+                  onPaste={handleSearchPaste}
+                  placeholder="Mobile number or loan account number"
+                  type="text"
+                  value={searchDisplayQuery}
+                />
+              </div>
             </label>
             <button className="primary-action" disabled={loading} type="submit">
               {loading ? "Loading..." : "Search"}
@@ -1007,20 +1436,19 @@ export default function LeadFeedbackPage({ config, onLogout, user }) {
                   </div>
 
                   <form className="feedback-form" id="feedback-form">
-                    {shouldShowUidField && (
-                      <TextField
-                        field={{
-                          label: "UID",
-                          name: "uid",
-                          placeholder: "1 letter + 19 digits",
-                          maxLength: 20,
-                          required: true,
-                          help: "Required. First character must be a letter followed by 19 digits.",
-                        }}
-                        onChange={onFeedbackChange}
-                        value={feedbackValues.uid || ""}
-                      />
-                    )}
+                    <TextField
+                      field={{
+                        label: "UID",
+                        name: "uid",
+                        placeholder: "1 letter + 19 digits",
+                        maxLength: 20,
+                        required: true,
+                        readOnly: assignedUidReadOnly,
+                        help: "Required. First character must be a letter followed by 19 digits.",
+                      }}
+                      onChange={onFeedbackChange}
+                      value={feedbackValues.uid || ""}
+                    />
                     <SelectField
                       field={{
                         label: "Disposition",
@@ -1045,6 +1473,22 @@ export default function LeadFeedbackPage({ config, onLogout, user }) {
                       onChange={onFeedbackChange}
                       value={feedbackValues.subDisposition}
                     />
+                    {(requiresNonPaymentReason(feedbackValues.disposition) ||
+                      isActiveFeedbackField(activeFieldNames, "nonPaymentReason")) && (
+                      <SelectField
+                        field={{
+                          label: "Non Payment Reason",
+                          name: "nonPaymentReason",
+                          options: config.reasonOptions || [],
+                          required: requiresNonPaymentReason(feedbackValues.disposition),
+                          help: requiresNonPaymentReason(feedbackValues.disposition)
+                            ? "Dropdown. Mandatory for Positive and Contacted dispositions."
+                            : "Dropdown. Reason customer refused or could not pay.",
+                        }}
+                        onChange={onFeedbackChange}
+                        value={feedbackValues.nonPaymentReason || ""}
+                      />
+                    )}
                     {isActiveFeedbackField(activeFieldNames, "paymentMode") && (
                       <SelectField
                         field={{
@@ -1081,13 +1525,6 @@ export default function LeadFeedbackPage({ config, onLogout, user }) {
                   </form>
 
                   <div className="form-actions">
-                    <button
-                      className="secondary-action"
-                      disabled={loading || redirectingAfterSubmit}
-                      type="button"
-                    >
-                      Save Draft
-                    </button>
                     <button
                       className="primary-action"
                       disabled={loading || redirectingAfterSubmit}
