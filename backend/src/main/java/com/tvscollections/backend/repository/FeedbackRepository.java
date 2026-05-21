@@ -43,6 +43,35 @@ public interface FeedbackRepository extends JpaRepository<Feedback, Long> {
                                                      Pageable pageable);
 
     @Query("""
+            SELECT f
+            FROM Feedback f
+            JOIN FETCH f.uploadFileData lead
+            JOIN FETCH lead.uploadFile uploadFile
+            JOIN FETCH lead.product product
+            JOIN FETCH f.agent agent
+            WHERE f.createdAt >= :start
+              AND f.createdAt < :end
+              AND NOT EXISTS (
+                  SELECT latestFeedback
+                  FROM Feedback latestFeedback
+                  WHERE latestFeedback.uploadFileData = f.uploadFileData
+                    AND latestFeedback.createdAt >= :start
+                    AND latestFeedback.createdAt < :end
+                    AND (
+                        latestFeedback.createdAt > f.createdAt
+                        OR (
+                            latestFeedback.createdAt = f.createdAt
+                            AND latestFeedback.id > f.id
+                        )
+                    )
+              )
+            ORDER BY lead.id ASC, f.createdAt DESC, f.id DESC
+            """)
+    Slice<Feedback> findLatestExportRowsByCreatedAtBetween(@Param("start") LocalDateTime start,
+                                                           @Param("end") LocalDateTime end,
+                                                           Pageable pageable);
+
+    @Query("""
             SELECT new com.tvscollections.backend.dto.FeedbackHistoryDto(
                 f.id,
                 f.uploadFileData.id,

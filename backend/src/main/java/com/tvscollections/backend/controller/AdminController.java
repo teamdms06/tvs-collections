@@ -102,7 +102,8 @@ public class AdminController {
 
     @GetMapping("/export/feedback")
     public ResponseEntity<?> exportFeedback(@RequestParam("startDate") String startDate,
-                                            @RequestParam("endDate") String endDate) {
+                                            @RequestParam("endDate") String endDate,
+                                            @RequestParam(value = "mode", defaultValue = AdminDashboardService.EXPORT_MODE_ALL) String mode) {
         try {
             validateAdmin();
             LocalDate parsedStartDate;
@@ -115,9 +116,12 @@ public class AdminController {
                 throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Dates must use yyyy-MM-dd format", error);
             }
 
-            String fileName = "feedback-export-" + startDate + "-to-" + endDate + ".xlsx";
+            String normalizedMode = mode == null || mode.isBlank()
+                    ? AdminDashboardService.EXPORT_MODE_ALL
+                    : mode.trim().toLowerCase();
+            String fileName = "feedback-" + normalizedMode + "-export-" + startDate + "-to-" + endDate + ".xlsx";
             ByteArrayOutputStream exportFile = new ByteArrayOutputStream();
-            adminDashboardService.exportFeedback(parsedStartDate, parsedEndDate, exportFile);
+            adminDashboardService.exportFeedback(parsedStartDate, parsedEndDate, normalizedMode, exportFile);
 
             return ResponseEntity.ok()
                     .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + fileName + "\"")

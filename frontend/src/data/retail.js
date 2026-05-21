@@ -116,6 +116,12 @@ export const retailEditableFields = [
     options: retailNonPaymentReasons,
     help: "Dropdown. Retail non-payment reason.",
   },
+  // {
+  //   label: "Customer Bouncing Reason",
+  //   name: "bouncingReason",
+  //   options: retailBouncingReasons,
+  //   help: "Dropdown. Reason why EMI is bounced.",
+  // },
   {
     label: "Alternate Mobile Number",
     name: "alternateMobile",

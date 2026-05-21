@@ -74,10 +74,10 @@ export async function getUploadedFiles() {
   return parseResponse(response);
 }
 
-export async function exportFeedbackData(startDate, endDate) {
+export async function exportFeedbackData(startDate, endDate, mode = "all") {
   const token = localStorage.getItem("authToken");
   const response = await fetch(
-    `${API_BASE_URL}/admin/export/feedback?startDate=${encodeURIComponent(startDate)}&endDate=${encodeURIComponent(endDate)}`,
+    `${API_BASE_URL}/admin/export/feedback?startDate=${encodeURIComponent(startDate)}&endDate=${encodeURIComponent(endDate)}&mode=${encodeURIComponent(mode)}`,
     {
       headers: token ? { Authorization: `Bearer ${token}` } : {},
     },
@@ -99,7 +99,7 @@ export async function exportFeedbackData(startDate, endDate) {
 
   return {
     blob: await response.blob(),
-    fileName: match?.[1] || `feedback-export-${startDate}-to-${endDate}.xlsx`,
+    fileName: match?.[1] || `feedback-${mode}-export-${startDate}-to-${endDate}.xlsx`,
   };
 }
 

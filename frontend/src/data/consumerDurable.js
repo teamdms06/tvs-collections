@@ -310,6 +310,12 @@ export const editableFields = [
     help: 'Dropdown. Reason customer refused or could not pay.',
   },
   {
+    label: 'Customer Bouncing Reason',
+    name: 'bouncingReason',
+    options: reasonOptions,
+    help: 'Dropdown. Reason why EMI is bounced.',
+  },
+  {
     label: 'Alternate Mobile Number',
     name: 'alternateMobile',
     placeholder: '10 digit alternate number',

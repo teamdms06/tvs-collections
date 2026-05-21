@@ -30,7 +30,7 @@ public class User {
     @Column(nullable = false, unique = true, length = 150)
     public String email;
 
-    @Column(nullable = false, length=100)
+    @Column(name = "dialer_user", nullable = false, length=100)
     public String dialerUser;
 
     @Column(name = "is_active", nullable = false)

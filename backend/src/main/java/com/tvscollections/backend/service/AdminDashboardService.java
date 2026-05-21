@@ -39,6 +39,8 @@ import java.util.Set;
 public class AdminDashboardService {
     private static final int EXPORT_PAGE_SIZE = 1000;
     private static final int EXPORT_ROW_WINDOW_SIZE = 100;
+    public static final String EXPORT_MODE_ALL = "all";
+    public static final String EXPORT_MODE_LATEST = "latest";
 
     private static final String[] FEEDBACK_EXPORT_HEADERS = {
             "UID",
@@ -156,7 +158,7 @@ public class AdminDashboardService {
     }
 
     @Transactional(readOnly = true)
-    public void exportFeedback(LocalDate startDate, LocalDate endDate, OutputStream outputStream) {
+    public void exportFeedback(LocalDate startDate, LocalDate endDate, String mode, OutputStream outputStream) {
         if (startDate == null || endDate == null) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Start date and end date are required");
         }
@@ -167,6 +169,7 @@ public class AdminDashboardService {
 
         LocalDateTime start = startDate.atStartOfDay();
         LocalDateTime endExclusive = endDate.plusDays(1).atStartOfDay();
+        String normalizedMode = normalizeExportMode(mode);
 
         try (SXSSFWorkbook workbook = new SXSSFWorkbook(EXPORT_ROW_WINDOW_SIZE)) {
             workbook.setCompressTempFiles(true);
@@ -183,7 +186,9 @@ public class AdminDashboardService {
             Pageable pageable = PageRequest.of(0, EXPORT_PAGE_SIZE);
             Slice<Feedback> feedbackRows;
             do {
-                feedbackRows = feedbackRepository.findExportRowsByCreatedAtBetween(start, endExclusive, pageable);
+                feedbackRows = EXPORT_MODE_LATEST.equals(normalizedMode)
+                        ? feedbackRepository.findLatestExportRowsByCreatedAtBetween(start, endExclusive, pageable)
+                        : feedbackRepository.findExportRowsByCreatedAtBetween(start, endExclusive, pageable);
                 for (Feedback feedback : feedbackRows.getContent()) {
                     writeFeedbackExportRow(sheet.createRow(rowIndex++), feedback);
                 }
@@ -201,6 +206,19 @@ public class AdminDashboardService {
         } catch (IOException error) {
             throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "Could not create export file", error);
         }
+    }
+
+    private String normalizeExportMode(String mode) {
+        if (mode == null || mode.isBlank()) {
+            return EXPORT_MODE_ALL;
+        }
+
+        String normalizedMode = mode.trim().toLowerCase(Locale.ROOT);
+        if (EXPORT_MODE_ALL.equals(normalizedMode) || EXPORT_MODE_LATEST.equals(normalizedMode)) {
+            return normalizedMode;
+        }
+
+        throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Export mode must be all or latest");
     }
 
     @Transactional

@@ -94,6 +94,49 @@ npm run preview
 
 For deployed environments, set `VITE_API_BASE_URL` if the API is not served from `/api`.
 
+## Frontend Deployment Cache Fix
+
+The frontend is built with Vite and served from `/tvs/`. On production servers, do not cache
+`index.html`; it must be revalidated on every visit so browsers discover the latest hashed JS/CSS
+files after each deployment. Hashed static assets can be cached for a long time.
+
+Build and deploy the frontend:
+
+```bash
+cd frontend
+npm run build
+```
+
+Copy the generated `frontend/dist` contents to the server location that serves `/tvs/`.
+
+If the frontend is served by Nginx, use cache headers like this:
+
+```nginx
+location = /tvs/index.html {
+  add_header Cache-Control "no-cache, no-store, must-revalidate" always;
+  add_header Pragma "no-cache" always;
+  add_header Expires "0" always;
+}
+
+location /tvs/assets/ {
+  add_header Cache-Control "public, max-age=31536000, immutable" always;
+}
+
+location /tvs/ {
+  try_files $uri $uri/ /tvs/index.html;
+}
+```
+
+After changing the server config, reload Nginx:
+
+```bash
+sudo nginx -t
+sudo systemctl reload nginx
+```
+
+If the server is IIS, Apache, or Tomcat instead of Nginx, apply the same rule there: `index.html`
+must use `no-cache` headers, while `/assets/` files can use long-term caching.
+
 ## Webhook Server Setup
 
 The webhook server is optional and listens for campaign webhook events.

@@ -19,7 +19,7 @@ const initialFeedback = {
 const paymentDispositionFields = ["amount", "actionDate", "paymentMode"];
 const paidToFields = ["paidToName", "paidToContact", "paidShowroom"];
 const callBackFields = ["callBackDate", "callBackTime"];
-const refusalFields = ["nonPaymentReason"];
+const refusalFields = ["nonPaymentReason", "bouncingReason"];
 
 const FEEDBACK_FIELDS_BY_SUB_DISPOSITION = {
   OCP: [
@@ -89,40 +89,44 @@ const FEEDBACK_FIELDS_BY_SUB_DISPOSITION = {
     "remark",
   ],
   LMG: [...callBackFields, "alternateMobile", "remark"],
-  CD: ["alternateMobile", "remark"],
+  CD: ["nonPaymentReason", "alternateMobile", "remark"],
   RTP: [...refusalFields, "alternateMobile", "remark"],
-  WRNG: ["alternateMobile", "remark"],
+  WRNG: ["nonPaymentReason", "alternateMobile", "remark"],
+  LC: ["nonPaymentReason", "alternateMobile", "remark"],
 };
 
 const REQUIRED_FIELDS_BY_SUB_DISPOSITION = {
-  OCP: ["amount", "actionDate", "paymentMode", "receiptNo", "remark"],
-  BPTP: ["amount", "actionDate", "paymentMode", "remark"],
-  ONKT: ["amount", "actionDate", "paymentMode", "remark"],
+  OCP: ["amount", "actionDate", "paymentMode", "receiptNo", "nonPaymentReason", "remark"],
+  BPTP: ["amount", "actionDate", "paymentMode", "nonPaymentReason", "remark"],
+  ONKT: ["amount", "actionDate", "paymentMode", "nonPaymentReason", "remark"],
   Pickup: [
     "amount",
     "actionDate",
     "paymentMode",
     "pickupTime",
     "pickupAddress",
+    "nonPaymentReason",
     "remark",
   ],
-  PTP: ["amount", "actionDate", "paymentMode", "remark"],
-  LPTP: ["amount", "actionDate", "paymentMode", "remark"],
-  AP: ["amount", "actionDate", "paymentMode", "receiptNo", "remark"],
-  APCB: ["amount", "actionDate", "remark"],
+  PTP: ["amount", "actionDate", "paymentMode", "nonPaymentReason", "remark"],
+  LPTP: ["amount", "actionDate", "paymentMode", "nonPaymentReason", "remark"],
+  AP: ["amount", "actionDate", "paymentMode", "receiptNo", "nonPaymentReason", "remark"],
+  APCB: ["amount", "actionDate", "nonPaymentReason", "remark"],
   CLBK: ["callBackDate", "callBackTime", "remark"],
-  CLBK_P: ["callBackDate", "callBackTime", "remark"],
+  CLBK_P: ["callBackDate", "callBackTime", "nonPaymentReason", "remark"],
   LMG: ["remark"],
-  CD: ["remark"],
-  RTP: ["nonPaymentReason", "remark"],
-  WRNG: ["remark"],
+  CD: ["nonPaymentReason", "remark"],
+  RTP: ["nonPaymentReason", "bouncingReason", "remark"],
+  WRNG: ["nonPaymentReason", "remark"],
+  LC: ["nonPaymentReason", "remark"],
 };
 
 const alwaysSubmittedFields = ["disposition", "subDisposition"];
-const alwaysVisibleFeedbackFields = ["uid"];
+const alwaysVisibleFeedbackFields = [];
 const WEBHOOK_SOCKET_URL = import.meta.env.VITE_WEBHOOK_SOCKET_URL || "http://192.168.114.241:3001";
 const AGENT_CALL_STATUS_ATTEMPTS = 8;
 const AGENT_CALL_STATUS_RETRY_MS = 1000;
+const DIALER_USER_LOOKUP_ATTEMPTS = 3;
 const ASSIGNED_CALL_SEARCH_DELAY_MS = 3000;
 const DIALER_SCRIPT_ID = "vd-dialer-script";
 
@@ -221,7 +225,7 @@ function cleanAlternateMobileValue(value) {
 function createInitialFeedback(config, lead = {}) {
   const values = {
     ...initialFeedback,
-    uid: "",
+    uid: cleanUidValue(lead.uid),
     status: "",
     disposition: "",
     subDisposition: cleanFeedbackValue(lead.bestDispoInternal),
@@ -262,10 +266,6 @@ function getFeedbackValue(feedbackValues, activeFieldNames, name) {
     : "";
 }
 
-function requiresNonPaymentReason(disposition) {
-  return ["Positive", "Contacted"].includes(disposition);
-}
-
 function toFeedbackRequest(feedbackValues, activeFieldNames) {
   return {
     uid: cleanUidValue(feedbackValues.uid),
@@ -275,11 +275,11 @@ function toFeedbackRequest(feedbackValues, activeFieldNames) {
       getFeedbackValue(feedbackValues, activeFieldNames, "paymentMode"),
     ),
     nonPaymentReason: cleanFeedbackValue(
-      requiresNonPaymentReason(feedbackValues.disposition)
-        ? feedbackValues.nonPaymentReason
-        : getFeedbackValue(feedbackValues, activeFieldNames, "nonPaymentReason"),
+      getFeedbackValue(feedbackValues, activeFieldNames, "nonPaymentReason"),
     ),
-    bouncingReason: "",
+    bouncingReason: cleanFeedbackValue(
+      getFeedbackValue(feedbackValues, activeFieldNames, "bouncingReason"),
+    ),
     ptpAmount: getFeedbackValue(feedbackValues, activeFieldNames, "amount")
       ? Number(feedbackValues.amount)
       : null,
@@ -393,13 +393,6 @@ function getValidationErrors(
 
   if (uid && !/^[A-Za-z]\d{19}$/.test(uid)) {
     errors.push("UID must start with 1 letter followed by 19 digits");
-  }
-
-  if (
-    requiresNonPaymentReason(feedbackValues.disposition) &&
-    !cleanFeedbackValue(feedbackValues.nonPaymentReason)
-  ) {
-    errors.push("Non Payment Reason");
   }
 
   return errors;
@@ -833,6 +826,22 @@ export default function LeadFeedbackPage({ config, onLogout, user }) {
     const retryTimers = [];
 
     const logAssignedCallDetail = async (callData, attempt = 1) => {
+      if (!String(user.dialerUser || "").trim()) {
+        if (attempt < DIALER_USER_LOOKUP_ATTEMPTS) {
+          retryTimers.push(
+            window.setTimeout(
+              () => logAssignedCallDetail(callData, attempt + 1),
+              AGENT_CALL_STATUS_RETRY_MS,
+            ),
+          );
+        } else {
+          console.warn(
+            "[Campaign Webhook] Dialer user is not configured. Stopping assigned call detail lookup.",
+          );
+        }
+        return;
+      }
+
       try {
         const agentStatus = parseDialerAgentStatusCsv(await getMyDialerAgentStatus());
         const webhookMobileNumber = getComparablePhoneValue(callData?.caller);
@@ -843,15 +852,15 @@ export default function LeadFeedbackPage({ config, onLogout, user }) {
           agentMobileNumber === webhookMobileNumber;
 
         if (isMatchingAssignedCall) {
-          console.log(
-            `[Campaign Webhook] Selected agent live call detail: ${user.dialerUser || user.username} (${agentStatus.full_name || user.name})`,
-            {
-              agentName: agentStatus.full_name || user.name,
-              mobileNumber: agentStatus.phone_number || callData.caller,
-              callerId: agentStatus.callerid,
-              vendorLeadCode: agentStatus.vendor_lead_code,
-            },
-          );
+          // console.log(
+          //   `[Campaign Webhook] Selected agent live call detail: ${user.dialerUser || user.username} (${agentStatus.full_name || user.name})`,
+          //   {
+          //     agentName: agentStatus.full_name || user.name,
+          //     mobileNumber: agentStatus.phone_number || callData.caller,
+          //     callerId: agentStatus.callerid,
+          //     vendorLeadCode: agentStatus.vendor_lead_code,
+          //   },
+          // );
           setPendingAssignedCallDetail({
             callerId: agentStatus.callerid,
             vendorLeadCode: agentStatus.vendor_lead_code,
@@ -900,7 +909,7 @@ export default function LeadFeedbackPage({ config, onLogout, user }) {
 
         socket = io(WEBHOOK_SOCKET_URL);
         socket.on("connect", () => {
-          console.log("[Campaign Webhook] Agent listener connected", WEBHOOK_SOCKET_URL);
+          // console.log("[Campaign Webhook] Agent listener connected", WEBHOOK_SOCKET_URL);
         });
         socket.on("campaign_call_observed", (callData) => {
           logAssignedCallDetail(callData);
@@ -941,16 +950,18 @@ export default function LeadFeedbackPage({ config, onLogout, user }) {
     [feedbackValues.subDisposition],
   );
   const lead = activeLead || config.emptyLead;
+  const showUidField = true;
   const requiredFieldNames = useMemo(() => {
     const nextRequiredFieldNames = new Set(baseRequiredFieldNames);
-    nextRequiredFieldNames.add("uid");
+    if (showUidField) {
+      nextRequiredFieldNames.add("uid");
+    }
     return nextRequiredFieldNames;
-  }, [baseRequiredFieldNames]);
+  }, [baseRequiredFieldNames, showUidField]);
   const editableFields = useMemo(
     () =>
       (config.editableFields || [])
         .filter((field) => field.name !== "reason")
-        .filter((field) => field.name !== "nonPaymentReason")
         .filter((field) => isActiveFeedbackField(activeFieldNames, field.name))
         .map((field) => ({
           ...field,
@@ -1047,7 +1058,7 @@ export default function LeadFeedbackPage({ config, onLogout, user }) {
       const normalizedResults = results.map(normalizeLead);
       setSearchResults(normalizedResults);
 
-      console.log(normalizedResults);
+      // console.log(normalizedResults);
 
       if (normalizedResults.length === 1) {
         setPreviewLead(normalizedResults[0]);
@@ -1436,19 +1447,21 @@ export default function LeadFeedbackPage({ config, onLogout, user }) {
                   </div>
 
                   <form className="feedback-form" id="feedback-form">
-                    <TextField
-                      field={{
-                        label: "UID",
-                        name: "uid",
-                        placeholder: "1 letter + 19 digits",
-                        maxLength: 20,
-                        required: true,
-                        readOnly: assignedUidReadOnly,
-                        help: "Required. First character must be a letter followed by 19 digits.",
-                      }}
-                      onChange={onFeedbackChange}
-                      value={feedbackValues.uid || ""}
-                    />
+                    {showUidField && (
+                      <TextField
+                        field={{
+                          label: "UID",
+                          name: "uid",
+                          placeholder: "1 letter + 19 digits",
+                          maxLength: 20,
+                          required: requiredFieldNames.has("uid"),
+                          readOnly: assignedUidReadOnly,
+                          help: "Required. First character must be a letter followed by 19 digits.",
+                        }}
+                        onChange={onFeedbackChange}
+                        value={feedbackValues.uid || ""}
+                      />
+                    )}
                     <SelectField
                       field={{
                         label: "Disposition",
@@ -1473,22 +1486,6 @@ export default function LeadFeedbackPage({ config, onLogout, user }) {
                       onChange={onFeedbackChange}
                       value={feedbackValues.subDisposition}
                     />
-                    {(requiresNonPaymentReason(feedbackValues.disposition) ||
-                      isActiveFeedbackField(activeFieldNames, "nonPaymentReason")) && (
-                      <SelectField
-                        field={{
-                          label: "Non Payment Reason",
-                          name: "nonPaymentReason",
-                          options: config.reasonOptions || [],
-                          required: requiresNonPaymentReason(feedbackValues.disposition),
-                          help: requiresNonPaymentReason(feedbackValues.disposition)
-                            ? "Dropdown. Mandatory for Positive and Contacted dispositions."
-                            : "Dropdown. Reason customer refused or could not pay.",
-                        }}
-                        onChange={onFeedbackChange}
-                        value={feedbackValues.nonPaymentReason || ""}
-                      />
-                    )}
                     {isActiveFeedbackField(activeFieldNames, "paymentMode") && (
                       <SelectField
                         field={{
