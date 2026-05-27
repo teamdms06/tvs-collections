@@ -1,5 +1,6 @@
 package com.tvscollections.backend.controller;
 
+import com.tvscollections.backend.dto.DialerActionRequestDto;
 import com.tvscollections.backend.service.DialerProxyService;
 import com.tvscollections.backend.security.UserPrincipal;
 import org.springframework.http.MediaType;
@@ -8,7 +9,9 @@ import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.server.ResponseStatusException;
 import org.springframework.http.HttpStatus;
@@ -24,6 +27,19 @@ public class DialerController {
 
     @GetMapping("/my-agent-status")
     public ResponseEntity<String> getMyAgentStatus() {
+        return ResponseEntity.ok()
+                .contentType(MediaType.TEXT_PLAIN)
+                .body(dialerProxyService.getAgentStatus(getCurrentDialerUser()));
+    }
+
+    @PostMapping("/action")
+    public ResponseEntity<String> performAction(@RequestBody DialerActionRequestDto request) {
+        return ResponseEntity.ok()
+                .contentType(MediaType.TEXT_PLAIN)
+                .body(dialerProxyService.performAgentAction(getCurrentDialerUser(), request));
+    }
+
+    private String getCurrentDialerUser() {
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
 
         if (authentication == null || !(authentication.getPrincipal() instanceof UserPrincipal userPrincipal)) {
@@ -35,8 +51,6 @@ public class DialerController {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Dialer user is not configured");
         }
 
-        return ResponseEntity.ok()
-                .contentType(MediaType.TEXT_PLAIN)
-                .body(dialerProxyService.getAgentStatus(dialerUser.trim()));
+        return dialerUser.trim();
     }
 }

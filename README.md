@@ -48,6 +48,9 @@ tvs-collections/
    - `vicidial.host`
    - `vicidial.api-user`
    - `vicidial.api-pass`
+   - `VICIDIAL_AGENT_API_HOST`
+   - `VICIDIAL_AGENT_API_USER`
+   - `VICIDIAL_AGENT_API_PASS`
 
 2. Start the backend:
 

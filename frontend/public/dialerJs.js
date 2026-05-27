@@ -1044,7 +1044,6 @@
   let totalParkTime = 0;
   let isParked = false;
   let autoAnswerTimeout = null;
-  let isAutoAnswered = false;
 
   // Create floating toggle button
   const toggleBtn = document.createElement("button");
@@ -1276,25 +1275,25 @@
     pauseForm: document.getElementById("vd-pauseForm"),
   };
 
-  // API call function
-  const callVicidialApi = (func, value = "") => {
-    const baseURL = "http://10.42.33.203/agc/api.php";
-    const params = new URLSearchParams({
-      source: "test",
-      user: "LHLAdmin",
-      pass: "C0nnecti0ns2025",
-      agent_user: "Test1",
-      function: func,
-      value: value,
+  // ViciDial details and credentials stay behind the authenticated backend proxy.
+  const callDialerAction = async (action, payload = {}) => {
+    const apiBaseUrl = String(window.tvsDialerApiBaseUrl || "/api").replace(/\/$/, "");
+    const token = localStorage.getItem("authToken");
+    const response = await fetch(`${apiBaseUrl}/dialer/action`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      body: JSON.stringify({ action, ...payload }),
     });
-    const fullUrl = `${baseURL}?${params.toString()}`;
-    console.log("Calling API:", fullUrl);
-    return fetch(fullUrl)
-      .then((res) => res.text())
-      .catch((err) => {
-        console.error("API Error:", err);
-        return "ERROR";
-      });
+    const text = await response.text();
+
+    if (!response.ok) {
+      throw new Error(`${response.status} ${response.statusText}: ${text || "Dialer action failed"}`);
+    }
+
+    return text;
   };
 
   // Timer functions
@@ -1403,7 +1402,6 @@
     // Start call timer
     startTimer();
     isInCall = true;
-    isAutoAnswered = true;
     currentCall = elements.callerNumber.textContent;
 
     // Update UI for auto-answered call
@@ -1436,7 +1434,6 @@
     // Start the timer
     startTimer();
     isInCall = true;
-    isAutoAnswered = false;
     currentCall = number;
 
     // Enable all buttons for manually started calls
@@ -1444,10 +1441,7 @@
 
     // API call
 
-    fetch(
-      `http://10.42.33.203/agc/api.php?source=test&user=LHLAdmin&pass=C0nnecti0ns2025&agent_user=Test&function=external_dial&value=8390568003&phone_code=91&search=YES&preview=NO&focus=NO`,
-    )
-      .then((res) => res.text())
+    callDialerAction("dial", { phoneNumber: number })
       .then((data) => {
         console.log("Start Call Response:", data);
         elements.callStatus.textContent = `✅ Connected to ${number}`;
@@ -1538,7 +1532,6 @@
 
     isInCall = false;
     isParked = false;
-    isAutoAnswered = false;
 
     // Re-enable all buttons
     enableAllButtons();
@@ -1547,7 +1540,7 @@
     endSound.play().catch(() => console.log("Could not play end sound"));
 
     // API call
-    callVicidialApi("external_hangup", "1")
+    callDialerAction("hangup")
       .then((data) => {
         console.log("Hangup Response:", data);
         showModal(elements.dispositionModal);
@@ -1557,7 +1550,7 @@
 
   // Pause call function
   function pauseCall() {
-    callVicidialApi("external_pause", "PAUSE")
+    callDialerAction("pause")
       .then((data) => {
         console.log("Pause Call Response:", data);
         showModal(elements.pauseModal);
@@ -1567,7 +1560,7 @@
 
   // Resume call function
   function resumeCall() {
-    callVicidialApi("external_pause", "RESUME")
+    callDialerAction("resume")
       .then((data) => {
         console.log("Resume Call Response:", data);
         elements.callStatus.textContent = "✅ Ready for calls";
@@ -1591,7 +1584,7 @@
     elements.grabCallBtn.style.display = "block";
 
     // Use the shared API helper (keeps URL/params consistent)
-    callVicidialApi("park_call", "PARK_CUSTOMER")
+    callDialerAction("park")
       .then((data) => {
         console.log("Park Call Response:", data);
         elements.callStatus.textContent = "🅿 Call parked - Customer on hold";
@@ -1615,7 +1608,7 @@
 
     elements.callStatus.textContent = "📲 Grabbing call...";
 
-    callVicidialApi("park_call", "GRAB_CUSTOMER")
+    callDialerAction("grab")
       .then((data) => {
         console.log("Grab Call Response:", data);
 
@@ -1638,7 +1631,7 @@
 
   // Conference function
   function conferenceCall() {
-    callVicidialApi("conference", "")
+    callDialerAction("conference")
       .then((data) => {
         console.log("Conference Response:", data);
         elements.callStatus.textContent = "👥 Conference initiated";
@@ -1662,7 +1655,6 @@
     // Start call timer
     startTimer();
     isInCall = true;
-    isAutoAnswered = false;
     currentCall = elements.callerNumber.textContent;
 
     elements.callStatus.textContent = `📞 In call with ${currentCall}`;
@@ -1701,7 +1693,7 @@
     }
 
     const value = selected.value;
-    callVicidialApi("external_status", value)
+    callDialerAction("disposition", { value })
       .then((data) => {
         console.log("Disposition Response:", data);
         hideModal(elements.dispositionModal);
@@ -1711,7 +1703,6 @@
         elements.callStatus.textContent = "✅ Ready to dial";
         currentCall = null;
         isParked = false;
-        isAutoAnswered = false;
 
         // Re-enable all buttons
         enableAllButtons();
@@ -1732,7 +1723,7 @@
     }
 
     const value = selected.value;
-    callVicidialApi("pause_code", value)
+    callDialerAction("pauseCode", { value })
       .then((data) => {
         console.log("Pause Code Response:", data);
         hideModal(elements.pauseModal);
@@ -1746,8 +1737,8 @@
 
   // Socket.IO for incoming calls
   function initializeSocket() {
-    if (typeof io !== "undefined") {
-      const socket = io("http://192.168.114.241:3001");
+    if (typeof window.io !== "undefined") {
+      const socket = window.io("http://192.168.114.241:3001");
 
       socket.on("incoming_call", (data) => {
         console.log("Incoming Call:", data);

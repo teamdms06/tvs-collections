@@ -6,6 +6,7 @@ import {
   searchConsumerLeads,
 } from "../api/leads";
 import { getMyDialerAgentStatus } from "../api/dialer";
+import { API_BASE_URL } from "../api/config";
 
 const initialFeedback = {
   uid: "",
@@ -783,6 +784,7 @@ export default function LeadFeedbackPage({ config, onLogout, user }) {
       script.id = DIALER_SCRIPT_ID;
       script.src = `${import.meta.env.BASE_URL}dialerJs.js`;
       script.async = false;
+      window.tvsDialerApiBaseUrl = API_BASE_URL;
       document.body.appendChild(script);
     };
 
@@ -808,6 +810,7 @@ export default function LeadFeedbackPage({ config, onLogout, user }) {
       });
 
       delete window.dialerAPI;
+      delete window.tvsDialerApiBaseUrl;
     };
   }, []);
 

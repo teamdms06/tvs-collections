@@ -5,10 +5,10 @@ const { Server } = require("socket.io");
 const PORT = Number(process.env.PORT || 3001);
 const HOST_LABEL = process.env.HOST_LABEL || "192.168.114.241";
 const ALLOWED_DIALER_IPS = new Set(
-  (process.env.ALLOWED_DIALER_IPS || "192.168.114.212,10.42.33.203")
+  (process.env.ALLOWED_DIALER_IPS || "192.168.114.212")
     .split(",")
     .map((ip) => ip.trim())
-    .filter(Boolean)
+    .filter(Boolean),
 );
 
 const app = express();
@@ -24,7 +24,10 @@ function normalizeClientIp(req) {
   const forwardedFor = req.headers["x-forwarded-for"];
   const rawIp = Array.isArray(forwardedFor)
     ? forwardedFor[0]
-    : forwardedFor?.split(",")[0]?.trim() || req.socket.remoteAddress || req.ip || "";
+    : forwardedFor?.split(",")[0]?.trim() ||
+      req.socket.remoteAddress ||
+      req.ip ||
+      "";
 
   return rawIp.replace(/^::ffff:/, "");
 }
@@ -38,18 +41,25 @@ function getRequestData(req) {
 }
 
 function handleCampaignWebhook(req, res) {
-  const campaignId = String(req.params.campaignId || "").trim().toUpperCase();
+  const campaignId = String(req.params.campaignId || "")
+    .trim()
+    .toUpperCase();
   const data = getRequestData(req);
-  const caller = data.phoneNo || data.phone || data.mobile || data.caller || "Unknown";
+  const caller =
+    data.phoneNo || data.phone || data.mobile || data.caller || "Unknown";
   const clientIp = normalizeClientIp(req);
   const observedAt = new Date().toISOString();
 
   if (!campaignId) {
-    return res.status(400).json({ error: "campaignId is required in the webhook URL" });
+    return res
+      .status(400)
+      .json({ error: "campaignId is required in the webhook URL" });
   }
 
   if (ALLOWED_DIALER_IPS.size > 0 && !ALLOWED_DIALER_IPS.has(clientIp)) {
-    console.log(`[${observedAt}] Ignored webhook from ${clientIp}: campaign=${campaignId}, caller=${caller}`);
+    console.log(
+      `[${observedAt}] Ignored webhook from ${clientIp}: campaign=${campaignId}, caller=${caller}`,
+    );
     return res.sendStatus(403);
   }
 
@@ -60,7 +70,9 @@ function handleCampaignWebhook(req, res) {
     observedAt,
   };
 
-  console.log(`[${observedAt}] Campaign webhook hit: campaign=${campaignId}, caller=${caller}, from=${clientIp}`);
+  console.log(
+    `[${observedAt}] Campaign webhook hit: campaign=${campaignId}, caller=${caller}, from=${clientIp}`,
+  );
   io.emit("campaign_call_observed", payload);
 
   return res.status(200).json({ ok: true, ...payload });
@@ -82,7 +94,13 @@ app.all("/webhook/:campaignId", handleCampaignWebhook);
 app.all("/:campaignId/webhook", handleCampaignWebhook);
 
 server.listen(PORT, "0.0.0.0", () => {
-  console.log(`Campaign webhook observer running at http://${HOST_LABEL}:${PORT}`);
-  console.log(`Use URLs like http://${HOST_LABEL}:${PORT}/webhook/TVSTWG?phoneNo=8956236598`);
-  console.log(`Also supported: http://${HOST_LABEL}:${PORT}/tvstwg/webhook?phoneNo=8956236598`);
+  console.log(
+    `Campaign webhook observer running at http://${HOST_LABEL}:${PORT}`,
+  );
+  console.log(
+    `Use URLs like http://${HOST_LABEL}:${PORT}/webhook/TVSTWG?phoneNo=8956236598`,
+  );
+  console.log(
+    `Also supported: http://${HOST_LABEL}:${PORT}/tvstwg/webhook?phoneNo=8956236598`,
+  );
 });
