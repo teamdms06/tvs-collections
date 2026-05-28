@@ -7,6 +7,11 @@ export default defineConfig({
   base: "/tvs/",
   plugins: [react(), babel({ presets: [reactCompilerPreset()] })],
   server: {
+    host: "0.0.0.0",
+    port: 5173,
+
+    allowedHosts: ["app.workspace.local"],
+
     proxy: {
       "/api": {
         target: "http://localhost:4000",

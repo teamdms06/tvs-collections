@@ -18,5 +18,6 @@ public class FeedbackRequestDto {
     public String callBackDate;
     public String callBackTime;
     public String alternateMobileNumber;
+    public String sourceIncome;
     public String remark;
 }

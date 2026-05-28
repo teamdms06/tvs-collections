@@ -3,6 +3,7 @@ package com.tvscollections.backend.model;
 import jakarta.persistence.*;
 
 import java.time.LocalDateTime;
+import java.time.temporal.ChronoUnit;
 
 @Entity
 @Table(name = "user_roles", uniqueConstraints = @UniqueConstraint(name = "uq_user_role", columnNames = {"user_id", "role_id"}))
@@ -32,6 +33,8 @@ public class UserRole {
 
     @PrePersist
     public void prePersist() {
-        createdAt = LocalDateTime.now();
+        if (createdAt == null) {
+            createdAt = LocalDateTime.now().truncatedTo(ChronoUnit.SECONDS);
+        }
     }
 }

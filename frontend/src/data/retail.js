@@ -116,6 +116,12 @@ export const retailEditableFields = [
     options: retailNonPaymentReasons,
     help: "Dropdown. Retail non-payment reason.",
   },
+  {
+    label: "Source of Income",
+    name: "sourceIncome",
+    placeholder: "Enter source of income",
+    help: "Text. Mandatory for positive and selected contacted dispositions.",
+  },
   // {
   //   label: "Customer Bouncing Reason",
   //   name: "bouncingReason",

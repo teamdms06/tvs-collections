@@ -19,6 +19,7 @@ public class FeedbackHistoryDto {
     public String callBackDate;
     public String callBackTime;
     public String alternateMobileNumber;
+    public String sourceIncome;
     public String remark;
 
     public FeedbackHistoryDto(Long id,
@@ -31,9 +32,10 @@ public class FeedbackHistoryDto {
                               String callBackDate,
                               String callBackTime,
                               String alternateMobileNumber,
+                              String sourceIncome,
                               String remark) {
         this(id, null, createdAt, null, disposition, subDisposition, paymentMode, ptpAmount, ptpDate, callBackDate,
-                callBackTime, alternateMobileNumber, remark);
+                callBackTime, alternateMobileNumber, sourceIncome, remark);
     }
 
     public FeedbackHistoryDto(Long id,
@@ -48,6 +50,7 @@ public class FeedbackHistoryDto {
                               String callBackDate,
                               String callBackTime,
                               String alternateMobileNumber,
+                              String sourceIncome,
                               String remark) {
         this.id = id;
         this.uploadFileDataId = uploadFileDataId;
@@ -61,6 +64,7 @@ public class FeedbackHistoryDto {
         this.callBackDate = callBackDate;
         this.callBackTime = callBackTime;
         this.alternateMobileNumber = alternateMobileNumber;
+        this.sourceIncome = sourceIncome;
         this.remark = remark;
     }
 
@@ -78,6 +82,7 @@ public class FeedbackHistoryDto {
                 feedback.callBackDate,
                 feedback.callBackTime,
                 feedback.alternateMobileNumber,
+                feedback.sourceIncome,
                 feedback.remark
         );
     }

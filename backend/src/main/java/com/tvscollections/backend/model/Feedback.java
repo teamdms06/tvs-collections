@@ -82,6 +82,9 @@ public class Feedback {
     @Column(name = "alternate_mobile_number", length = 20)
     public String alternateMobileNumber;
 
+    @Column(name = "source_income", length = 150)
+    public String sourceIncome;
+
     @Column(columnDefinition = "TEXT")
     public String remark;
 
@@ -93,6 +96,8 @@ public class Feedback {
 
     @PrePersist
     public void prePersist() {
-        createdAt = LocalDateTime.now();
+        if (createdAt == null) {
+            createdAt = LocalDateTime.now();
+        }
     }
 }

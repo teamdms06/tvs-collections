@@ -85,6 +85,7 @@ public interface FeedbackRepository extends JpaRepository<Feedback, Long> {
                 f.callBackDate,
                 f.callBackTime,
                 f.alternateMobileNumber,
+                f.sourceIncome,
                 f.remark
             )
             FROM Feedback f
@@ -107,6 +108,7 @@ public interface FeedbackRepository extends JpaRepository<Feedback, Long> {
                 f.callBackDate,
                 f.callBackTime,
                 f.alternateMobileNumber,
+                f.sourceIncome,
                 f.remark
             )
             FROM Feedback f

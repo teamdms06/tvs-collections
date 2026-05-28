@@ -25,6 +25,11 @@ public class DatabaseSchemaConfig {
                 "uid",
                 "VARCHAR(50)"
         );
+        addColumnIfMissing(
+                "feedback",
+                "source_income",
+                "VARCHAR(150)"
+        );
 
         createAgentActivitySessionsTableIfMissing();
 

@@ -310,6 +310,12 @@ export const editableFields = [
     help: 'Dropdown. Reason customer refused or could not pay.',
   },
   {
+    label: 'Source of Income',
+    name: 'sourceIncome',
+    placeholder: 'Enter source of income',
+    help: 'Text. Mandatory for positive and selected contacted dispositions.',
+  },
+  {
     label: 'Customer Bouncing Reason',
     name: 'bouncingReason',
     options: reasonOptions,

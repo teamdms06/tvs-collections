@@ -45,6 +45,7 @@ import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
@@ -420,11 +421,16 @@ public class UploadFileDataService {
         feedback.callBackDate = dateOrNull(feedbackDto.callBackDate, "callBackDate");
         feedback.callBackTime = timeOrNull(feedbackDto.callBackTime, "callBackTime");
         feedback.alternateMobileNumber = textOrNull(feedbackDto.alternateMobileNumber);
+        feedback.sourceIncome = textOrNull(feedbackDto.sourceIncome);
         feedback.remark = textOrNull(feedbackDto.remark);
+        validateSourceIncome(feedback);
+        LocalDateTime punchTimestamp = currentDatabaseTime();
+        feedback.createdAt = punchTimestamp;
 
         Feedback saved = feedbackRepository.save(feedback);
         lead.uid = feedbackUid;
         lead.latestFeedback = saved;
+        lead.updatedAt = punchTimestamp;
         uploadFileDataRepository.save(lead);
     }
 
@@ -434,6 +440,18 @@ public class UploadFileDataService {
         }
 
         return value.trim();
+    }
+
+    private void validateSourceIncome(Feedback feedback) {
+        String disposition = feedback.disposition == null ? "" : feedback.disposition.trim();
+        String subDisposition = feedback.subDisposition == null ? "" : feedback.subDisposition.trim();
+        boolean requiresSourceIncome = "Positive".equalsIgnoreCase(disposition)
+                || "RTP".equalsIgnoreCase(subDisposition)
+                || "CLBK_P".equalsIgnoreCase(subDisposition);
+
+        if (requiresSourceIncome && feedback.sourceIncome == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Source of Income is required");
+        }
     }
 
     private String dateOrNull(String value, String fieldName) {
@@ -470,6 +488,10 @@ public class UploadFileDataService {
                 || normalizedValue.equals("undefined")
                 || normalizedValue.equals("invalid date")
                 || normalizedValue.equals("-");
+    }
+
+    private LocalDateTime currentDatabaseTime() {
+        return LocalDateTime.now().truncatedTo(ChronoUnit.SECONDS);
     }
 
     private List<UploadFileData> readExcelRows(MultipartFile file, Product product, UploadFile uploadFile) throws IOException {
@@ -667,7 +689,7 @@ public class UploadFileDataService {
             return;
         }
 
-        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime now = currentDatabaseTime();
         String sql = """
                 INSERT INTO upload_file_data (
                     upload_file_id,

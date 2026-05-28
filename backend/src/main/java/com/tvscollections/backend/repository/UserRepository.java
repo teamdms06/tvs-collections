@@ -69,7 +69,7 @@ public interface UserRepository extends JpaRepository<User, Long> {
             "userRoles",
             "userRoles.role"
     })
-    @Query("select u from User u where u.username = :username")
+    @Query("select u from User u where lower(u.username) = lower(:username)")
     Optional<User> findWithAccessByUsername(@Param("username") String username);
 
     @EntityGraph(attributePaths = {

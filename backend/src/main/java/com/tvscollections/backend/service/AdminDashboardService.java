@@ -30,6 +30,7 @@ import java.io.IOException;
 import java.io.OutputStream;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
@@ -41,12 +42,13 @@ public class AdminDashboardService {
     private static final int EXPORT_ROW_WINDOW_SIZE = 100;
     public static final String EXPORT_MODE_ALL = "all";
     public static final String EXPORT_MODE_LATEST = "latest";
+    private static final DateTimeFormatter EXPORT_DATE_TIME_FORMATTER =
+            DateTimeFormatter.ofPattern("dd-MM-yyyy HH:mm:ss");
 
     private static final String[] FEEDBACK_EXPORT_HEADERS = {
             "UID",
             "list id",
-            "Call Date",
-            "Call Time",
+            "Call Date Time",
             "Agreement Number",
             "Full Name",
             "Status",
@@ -80,6 +82,7 @@ public class AdminDashboardService {
             "Call Back Time",
             "Non Payment reason (WHY Customer Refusing Pay)",
             "Customer Bouncing Reason (Why Emi Is Bounced)",
+            "Source of Income",
             "Remark",
             "Agent Name"
     };
@@ -284,8 +287,9 @@ public class AdminDashboardService {
 
     private int getExportColumnWidth(int columnIndex) {
         return switch (columnIndex) {
-            case 4, 9, 10, 26, 31 -> 18 * 256;
-            case 5, 8, 12, 28, 35, 36, 37 -> 28 * 256;
+            case 2 -> 22 * 256;
+            case 3, 8, 9, 25, 30 -> 18 * 256;
+            case 4, 7, 11, 27, 34, 35, 36, 37 -> 28 * 256;
             default -> 16 * 256;
         };
     }
@@ -301,8 +305,7 @@ public class AdminDashboardService {
         int column = 0;
         row.createCell(column++).setCellValue(textValue(feedbackUid(feedback, lead)));
         row.createCell(column++).setCellValue(textValue(leadText(lead, "listId")));
-        row.createCell(column++).setCellValue(textValue(feedback.createdAt == null ? null : feedback.createdAt.toLocalDate()));
-        row.createCell(column++).setCellValue(textValue(feedback.createdAt == null ? null : feedback.createdAt.toLocalTime()));
+        row.createCell(column++).setCellValue(formatExportDateTime(feedback.createdAt));
         row.createCell(column++).setCellValue(textValue(leadText(lead, "agreementNumber")));
         row.createCell(column++).setCellValue(textValue(leadText(lead, "customerName")));
         row.createCell(column++).setCellValue(textValue(feedback.disposition));
@@ -336,6 +339,7 @@ public class AdminDashboardService {
         row.createCell(column++).setCellValue(textValue(feedback.callBackTime));
         row.createCell(column++).setCellValue(textValue(feedback.nonPaymentReason));
         row.createCell(column++).setCellValue(textValue(feedback.bouncingReason));
+        row.createCell(column++).setCellValue(textValue(feedback.sourceIncome));
         row.createCell(column++).setCellValue(textValue(feedback.remark));
         row.createCell(column).setCellValue(textValue(agentName(feedback)));
     }
@@ -344,8 +348,7 @@ public class AdminDashboardService {
         int column = 0;
         row.createCell(column++).setCellValue(textValue(feedbackUid(feedback, null)));
         row.createCell(column++).setCellValue("");
-        row.createCell(column++).setCellValue(textValue(feedback.createdAt == null ? null : feedback.createdAt.toLocalDate()));
-        row.createCell(column++).setCellValue(textValue(feedback.createdAt == null ? null : feedback.createdAt.toLocalTime()));
+        row.createCell(column++).setCellValue(formatExportDateTime(feedback.createdAt));
         row.createCell(column++).setCellValue("");
         row.createCell(column++).setCellValue("");
         row.createCell(column++).setCellValue(textValue(feedback.disposition));
@@ -379,6 +382,7 @@ public class AdminDashboardService {
         row.createCell(column++).setCellValue(textValue(feedback.callBackTime));
         row.createCell(column++).setCellValue(textValue(feedback.nonPaymentReason));
         row.createCell(column++).setCellValue(textValue(feedback.bouncingReason));
+        row.createCell(column++).setCellValue(textValue(feedback.sourceIncome));
         row.createCell(column++).setCellValue(textValue(feedback.remark));
         row.createCell(column).setCellValue(textValue(agentName(feedback)));
     }
@@ -438,6 +442,10 @@ public class AdminDashboardService {
 
     private String textValue(Object value) {
         return value == null ? "" : String.valueOf(value);
+    }
+
+    private String formatExportDateTime(LocalDateTime value) {
+        return value == null ? "" : value.format(EXPORT_DATE_TIME_FORMATTER);
     }
 
     private double numberValue(Number value) {

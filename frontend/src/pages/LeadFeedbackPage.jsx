@@ -21,10 +21,12 @@ const paymentDispositionFields = ["amount", "actionDate", "paymentMode"];
 const paidToFields = ["paidToName", "paidToContact", "paidShowroom"];
 const callBackFields = ["callBackDate", "callBackTime"];
 const refusalFields = ["nonPaymentReason", "bouncingReason"];
+const positiveSupportFields = ["sourceIncome"];
 
 const FEEDBACK_FIELDS_BY_SUB_DISPOSITION = {
   OCP: [
     ...paymentDispositionFields,
+    ...positiveSupportFields,
     "receiptNo",
     ...refusalFields,
     "alternateMobile",
@@ -32,18 +34,21 @@ const FEEDBACK_FIELDS_BY_SUB_DISPOSITION = {
   ],
   BPTP: [
     ...paymentDispositionFields,
+    ...positiveSupportFields,
     ...refusalFields,
     "alternateMobile",
     "remark",
   ],
   ONKT: [
     ...paymentDispositionFields,
+    ...positiveSupportFields,
     ...refusalFields,
     "alternateMobile",
     "remark",
   ],
   Pickup: [
     ...paymentDispositionFields,
+    ...positiveSupportFields,
     "pickupTime",
     "pickupAddress",
     ...refusalFields,
@@ -52,18 +57,21 @@ const FEEDBACK_FIELDS_BY_SUB_DISPOSITION = {
   ],
   PTP: [
     ...paymentDispositionFields,
+    ...positiveSupportFields,
     ...refusalFields,
     "alternateMobile",
     "remark",
   ],
   LPTP: [
     ...paymentDispositionFields,
+    ...positiveSupportFields,
     ...refusalFields,
     "alternateMobile",
     "remark",
   ],
   AP: [
     ...paymentDispositionFields,
+    ...positiveSupportFields,
     "receiptNo",
     ...paidToFields,
     ...refusalFields,
@@ -72,6 +80,7 @@ const FEEDBACK_FIELDS_BY_SUB_DISPOSITION = {
   ],
   APCB: [
     ...paymentDispositionFields,
+    ...positiveSupportFields,
     ...paidToFields,
     ...refusalFields,
     "alternateMobile",
@@ -80,6 +89,7 @@ const FEEDBACK_FIELDS_BY_SUB_DISPOSITION = {
   CLBK: [...callBackFields, "alternateMobile", "remark"],
   CLBK_P: [
     ...paymentDispositionFields,
+    ...positiveSupportFields,
     "receiptNo",
     "pickupTime",
     "pickupAddress",
@@ -91,33 +101,34 @@ const FEEDBACK_FIELDS_BY_SUB_DISPOSITION = {
   ],
   LMG: [...callBackFields, "alternateMobile", "remark"],
   CD: ["nonPaymentReason", "alternateMobile", "remark"],
-  RTP: [...refusalFields, "alternateMobile", "remark"],
+  RTP: [...positiveSupportFields, ...refusalFields, "alternateMobile", "remark"],
   WRNG: ["nonPaymentReason", "alternateMobile", "remark"],
   LC: ["nonPaymentReason", "alternateMobile", "remark"],
 };
 
 const REQUIRED_FIELDS_BY_SUB_DISPOSITION = {
-  OCP: ["amount", "actionDate", "paymentMode", "receiptNo", "nonPaymentReason", "remark"],
-  BPTP: ["amount", "actionDate", "paymentMode", "nonPaymentReason", "remark"],
-  ONKT: ["amount", "actionDate", "paymentMode", "nonPaymentReason", "remark"],
+  OCP: ["amount", "actionDate", "paymentMode", "sourceIncome", "receiptNo", "nonPaymentReason", "remark"],
+  BPTP: ["amount", "actionDate", "paymentMode", "sourceIncome", "nonPaymentReason", "remark"],
+  ONKT: ["amount", "actionDate", "paymentMode", "sourceIncome", "nonPaymentReason", "remark"],
   Pickup: [
     "amount",
     "actionDate",
     "paymentMode",
+    "sourceIncome",
     "pickupTime",
     "pickupAddress",
     "nonPaymentReason",
     "remark",
   ],
-  PTP: ["amount", "actionDate", "paymentMode", "nonPaymentReason", "remark"],
-  LPTP: ["amount", "actionDate", "paymentMode", "nonPaymentReason", "remark"],
-  AP: ["amount", "actionDate", "paymentMode", "receiptNo", "nonPaymentReason", "remark"],
-  APCB: ["amount", "actionDate", "nonPaymentReason", "remark"],
+  PTP: ["amount", "actionDate", "paymentMode", "sourceIncome", "nonPaymentReason", "remark"],
+  LPTP: ["amount", "actionDate", "paymentMode", "sourceIncome", "nonPaymentReason", "remark"],
+  AP: ["amount", "actionDate", "paymentMode", "sourceIncome", "receiptNo", "nonPaymentReason", "remark"],
+  APCB: ["amount", "actionDate", "sourceIncome", "nonPaymentReason", "remark"],
   CLBK: ["callBackDate", "callBackTime", "remark"],
-  CLBK_P: ["callBackDate", "callBackTime", "nonPaymentReason", "remark"],
+  CLBK_P: ["sourceIncome", "callBackDate", "callBackTime", "nonPaymentReason", "remark"],
   LMG: ["remark"],
   CD: ["nonPaymentReason", "remark"],
-  RTP: ["nonPaymentReason", "bouncingReason", "remark"],
+  RTP: ["sourceIncome", "nonPaymentReason", "bouncingReason", "remark"],
   WRNG: ["nonPaymentReason", "remark"],
   LC: ["nonPaymentReason", "remark"],
 };
@@ -313,6 +324,9 @@ function toFeedbackRequest(feedbackValues, activeFieldNames) {
     ),
     alternateMobileNumber: cleanAlternateMobileValue(
       getFeedbackValue(feedbackValues, activeFieldNames, "alternateMobile"),
+    ),
+    sourceIncome: cleanFeedbackValue(
+      getFeedbackValue(feedbackValues, activeFieldNames, "sourceIncome"),
     ),
     remark: cleanFeedbackValue(
       getFeedbackValue(feedbackValues, activeFieldNames, "remark"),

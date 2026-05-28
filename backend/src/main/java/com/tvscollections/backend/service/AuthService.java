@@ -37,11 +37,12 @@ public class AuthService {
     }
 
     public AuthLoginResponse login(String username, String password) {
+        String normalizedUsername = username == null ? "" : username.trim();
         authenticationManager.authenticate(
-                new UsernamePasswordAuthenticationToken(username, password)
+                new UsernamePasswordAuthenticationToken(normalizedUsername, password)
         );
 
-        User user = userRepository.findWithAccessByUsername(username)
+        User user = userRepository.findWithAccessByUsername(normalizedUsername)
                 .orElseThrow(() -> new IllegalArgumentException("User not found"));
 
         String token = jwtUtils.generateToken(user.username);

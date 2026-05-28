@@ -20,6 +20,8 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 import org.springframework.web.server.ResponseStatusException;
 
+import java.time.LocalDateTime;
+import java.time.temporal.ChronoUnit;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
@@ -87,6 +89,9 @@ public class AdminUserService {
         user.email = email;
         user.passwordHash = passwordEncoder.encode(request.password);
         user.isActive = request.isActive == null || Boolean.TRUE.equals(request.isActive);
+        LocalDateTime timestamp = currentDatabaseTime();
+        user.createdAt = timestamp;
+        user.updatedAt = timestamp;
         assignRoles(user, request.roles);
         syncRoleProductAccess(user.getRoles(), request.accessProducts);
 
@@ -123,6 +128,7 @@ public class AdminUserService {
         if (StringUtils.hasText(request.password)) {
             user.passwordHash = passwordEncoder.encode(request.password);
         }
+        user.updatedAt = currentDatabaseTime();
 
         replaceRoles(user, request.roles);
         syncRoleProductAccess(user.getRoles(), request.accessProducts);
@@ -134,6 +140,7 @@ public class AdminUserService {
         User user = userRepository.findByIdWithRoles(userId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found"));
         user.isActive = isActive;
+        user.updatedAt = currentDatabaseTime();
         return toDto(userRepository.save(user));
     }
 
@@ -179,7 +186,9 @@ public class AdminUserService {
 
             Role role = roleRepository.findByName(roleName.trim())
                     .orElseThrow(() -> new ResponseStatusException(HttpStatus.BAD_REQUEST, "Role not found: " + roleName));
-            user.userRoles.add(new UserRole(user, role));
+            UserRole userRole = new UserRole(user, role);
+            userRole.createdAt = currentDatabaseTime();
+            user.userRoles.add(userRole);
         }
     }
 
@@ -216,7 +225,9 @@ public class AdminUserService {
 
             Role role = roleRepository.findByName(roleName.trim())
                     .orElseThrow(() -> new ResponseStatusException(HttpStatus.BAD_REQUEST, "Role not found: " + roleName));
-            user.userRoles.add(new UserRole(user, role));
+            UserRole userRole = new UserRole(user, role);
+            userRole.createdAt = currentDatabaseTime();
+            user.userRoles.add(userRole);
             existingRoleNames.add(normalizedRoleName);
         }
     }
@@ -280,7 +291,11 @@ public class AdminUserService {
             activeProducts.stream()
                     .filter(product -> targetCodes.contains(normalizeProductCode(product.code)))
                     .filter(product -> !roleProductAccessRepository.existsByRoleIdAndProductId(role.id, product.id))
-                    .map(product -> new RoleProductAccess(role, product))
+                    .map(product -> {
+                        RoleProductAccess access = new RoleProductAccess(role, product);
+                        access.createdAt = currentDatabaseTime();
+                        return access;
+                    })
                     .forEach(roleProductAccessRepository::save);
         }
     }
@@ -307,6 +322,10 @@ public class AdminUserService {
 
     private String normalizeProductCode(String productCode) {
         return StringUtils.hasText(productCode) ? productCode.trim().toLowerCase(Locale.ROOT) : "";
+    }
+
+    private LocalDateTime currentDatabaseTime() {
+        return LocalDateTime.now().truncatedTo(ChronoUnit.SECONDS);
     }
 
     private AdminUserDto toDto(User user) {

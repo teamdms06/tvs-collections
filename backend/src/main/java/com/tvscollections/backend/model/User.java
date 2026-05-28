@@ -5,6 +5,7 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import jakarta.persistence.*;
 
 import java.time.LocalDateTime;
+import java.time.temporal.ChronoUnit;
 import java.util.HashSet;
 import java.util.Set;
 import java.util.stream.Collectors;
@@ -51,13 +52,24 @@ public class User {
 
     @PrePersist
     public void prePersist() {
-        createdAt = LocalDateTime.now();
-        updatedAt = createdAt;
+        LocalDateTime now = currentDatabaseTime();
+        if (createdAt == null) {
+            createdAt = now;
+        }
+        if (updatedAt == null) {
+            updatedAt = createdAt;
+        }
     }
 
     @PreUpdate
     public void preUpdate() {
-        updatedAt = LocalDateTime.now();
+        if (updatedAt == null) {
+            updatedAt = currentDatabaseTime();
+        }
+    }
+
+    private LocalDateTime currentDatabaseTime() {
+        return LocalDateTime.now().truncatedTo(ChronoUnit.SECONDS);
     }
 
     public Set<Role> getRoles() {
