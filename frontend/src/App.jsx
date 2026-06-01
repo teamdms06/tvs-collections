@@ -7,6 +7,7 @@ import LoginPage from "./pages/LoginPage";
 import RetailPage from "./pages/RetailPage";
 import { API_BASE_URL } from "./api/config";
 import { markUserActivity } from "./api/leads";
+import { startAppVersionCheck } from "./utils/appVersion";
 
 const agentPages = {
   consumer: ConsumerDurablePage,
@@ -35,6 +36,8 @@ function App() {
       return null;
     }
   });
+
+  useEffect(() => startAppVersionCheck(), []);
 
   const logout = useCallback(() => {
     const token = localStorage.getItem("authToken");

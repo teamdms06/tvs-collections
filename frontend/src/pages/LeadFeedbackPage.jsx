@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   getConsumerLeadById,
   getUserDashboard,
@@ -1094,7 +1094,7 @@ export default function LeadFeedbackPage({ config, onLogout, user }) {
     }
   };
 
-  const openLead = async (leadId, options = {}) => {
+  const openLead = useCallback(async (leadId, options = {}) => {
     setLoading(true);
     setNotice(null);
 
@@ -1122,7 +1122,7 @@ export default function LeadFeedbackPage({ config, onLogout, user }) {
     } finally {
       setLoading(false);
     }
-  };
+  }, [config]);
 
   useEffect(() => {
     if (!pendingAssignedCallDetail) {
@@ -1188,7 +1188,7 @@ export default function LeadFeedbackPage({ config, onLogout, user }) {
     return () => {
       isCancelled = true;
     };
-  }, [pendingAssignedCallDetail]);
+  }, [config.key, openLead, pendingAssignedCallDetail]);
 
   const onFeedbackChange = (name, value) => {
     if (name === "uid" && assignedUidReadOnly) {
