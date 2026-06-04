@@ -56,7 +56,7 @@ import java.util.Optional;
 
 @Service
 public class UploadFileDataService {
-    private static final int INSERT_BATCH_SIZE = 1000;
+    private static final int INSERT_BATCH_SIZE = 500;
     private static final int SEARCH_RESULT_LIMIT = 50;
 
     private final UploadFileDataRepository uploadFileDataRepository;
@@ -66,6 +66,7 @@ public class UploadFileDataService {
     private final FeedbackRepository feedbackRepository;
     private final ObjectMapper objectMapper;
     private final JdbcTemplate jdbcTemplate;
+    private final UploadProgressService uploadProgressService;
 
     public UploadFileDataService(UploadFileDataRepository uploadFileDataRepository,
                                  UploadFileRepository uploadFileRepository,
@@ -73,7 +74,8 @@ public class UploadFileDataService {
                                  UserRepository userRepository,
                                  FeedbackRepository feedbackRepository,
                                  ObjectMapper objectMapper,
-                                 JdbcTemplate jdbcTemplate) {
+                                 JdbcTemplate jdbcTemplate,
+                                 UploadProgressService uploadProgressService) {
         this.uploadFileDataRepository = uploadFileDataRepository;
         this.uploadFileRepository = uploadFileRepository;
         this.productRepository = productRepository;
@@ -81,6 +83,7 @@ public class UploadFileDataService {
         this.feedbackRepository = feedbackRepository;
         this.objectMapper = objectMapper;
         this.jdbcTemplate = jdbcTemplate;
+        this.uploadProgressService = uploadProgressService;
     }
 
     @Transactional(readOnly = true)
@@ -335,6 +338,11 @@ public class UploadFileDataService {
 
     @Transactional
     public UploadResultDto uploadExcel(String productCode, User uploadedBy, MultipartFile file) {
+        return uploadExcel(productCode, uploadedBy, file, null);
+    }
+
+    @Transactional
+    public UploadResultDto uploadExcel(String productCode, User uploadedBy, MultipartFile file, String progressId) {
         String fileName = file.getOriginalFilename() == null ? "upload.xlsx" : file.getOriginalFilename();
         String lowerFileName = fileName.toLowerCase(Locale.ROOT);
 
@@ -352,28 +360,31 @@ public class UploadFileDataService {
         uploadFile.fileSize = file.getSize();
         uploadFile.status = UploadStatus.processing;
         uploadFile = uploadFileRepository.save(uploadFile);
+        uploadProgressService.start(progressId, fileName);
 
-        List<UploadFileData> rows;
+        int savedRecordCount;
         try {
-            rows = readExcelRows(file, product, uploadFile);
+            savedRecordCount = readAndInsertExcelRows(file, product, uploadFile, progressId);
         } catch (ResponseStatusException error) {
+            uploadProgressService.fail(progressId, error.getReason());
             uploadFile.status = UploadStatus.failed;
             uploadFileRepository.save(uploadFile);
             throw error;
         } catch (IOException error) {
+            uploadProgressService.fail(progressId, "Could not read Excel file: " + error.getMessage());
             uploadFile.status = UploadStatus.failed;
             uploadFileRepository.save(uploadFile);
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Could not read Excel file: " + error.getMessage(), error);
         }
 
-        uploadFile.totalRecords = rows.size();
-        uploadFile.validRecords = rows.size();
+        uploadFile.totalRecords = savedRecordCount;
+        uploadFile.validRecords = savedRecordCount;
         uploadFile.duplicateRecords = 0;
         uploadFile.failedRecords = 0;
         uploadFile.status = UploadStatus.completed;
 
-        batchInsertRows(rows);
         UploadFile savedUpload = uploadFileRepository.save(uploadFile);
+        uploadProgressService.complete(progressId, savedRecordCount);
 
         return new UploadResultDto(
                 savedUpload.id,
@@ -494,7 +505,10 @@ public class UploadFileDataService {
         return LocalDateTime.now().truncatedTo(ChronoUnit.SECONDS);
     }
 
-    private List<UploadFileData> readExcelRows(MultipartFile file, Product product, UploadFile uploadFile) throws IOException {
+    private int readAndInsertExcelRows(MultipartFile file,
+                                       Product product,
+                                       UploadFile uploadFile,
+                                       String progressId) throws IOException {
         try (InputStream inputStream = file.getInputStream();
              Workbook workbook = WorkbookFactory.create(inputStream)) {
             Sheet sheet = workbook.getSheetAt(0);
@@ -506,7 +520,11 @@ public class UploadFileDataService {
             }
 
             Map<Integer, String> headers = readHeaders(sheet.getRow(headerRowIndex), formatter);
-            List<UploadFileData> records = new ArrayList<>();
+            List<UploadFileData> batch = new ArrayList<>(INSERT_BATCH_SIZE);
+            int savedRecordCount = 0;
+            int readRecordCount = 0;
+            int estimatedTotalRecords = Math.max(0, sheet.getLastRowNum() - headerRowIndex);
+            uploadProgressService.processing(progressId, uploadFile.id, estimatedTotalRecords);
 
             for (int rowIndex = headerRowIndex + 1; rowIndex <= sheet.getLastRowNum(); rowIndex++) {
                 Row row = sheet.getRow(rowIndex);
@@ -521,10 +539,25 @@ public class UploadFileDataService {
                 Map<String, String> values = readRowValues(row, headers, formatter);
                 mapValues(record, values);
                 record.rawData = toJson(values);
-                records.add(record);
+                batch.add(record);
+                readRecordCount++;
+
+                if (batch.size() >= INSERT_BATCH_SIZE) {
+                    batchInsertRows(batch);
+                    savedRecordCount += batch.size();
+                    batch.clear();
+                    uploadProgressService.batchSaved(progressId, readRecordCount, savedRecordCount);
+                }
             }
 
-            return records;
+            if (!batch.isEmpty()) {
+                batchInsertRows(batch);
+                savedRecordCount += batch.size();
+                batch.clear();
+                uploadProgressService.batchSaved(progressId, readRecordCount, savedRecordCount);
+            }
+
+            return savedRecordCount;
         }
     }
 

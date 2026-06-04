@@ -37,24 +37,87 @@ async function parseResponse(response) {
   return data;
 }
 
-export async function uploadConsumerLeads(file, productKey = "consumer") {
+function parsePayload(text) {
+  if (!text) {
+    return null;
+  }
+
+  try {
+    return JSON.parse(text);
+  } catch {
+    return text;
+  }
+}
+
+function getResponseError(status, statusText, payload) {
+  const error =
+    (payload && typeof payload === "object" && payload.message) ||
+    (typeof payload === "string" && payload) ||
+    statusText ||
+    "Server error";
+  return `${status} ${statusText}: ${error}`;
+}
+
+export async function uploadConsumerLeads(file, productKey = "consumer", options = {}) {
   const formData = new FormData();
   formData.append("file", file);
+  if (options.progressId) {
+    formData.append("progressId", options.progressId);
+  }
 
   const token = localStorage.getItem("authToken");
   const headers = token ? { Authorization: `Bearer ${token}` } : {};
 
-  const response = await fetch(`${API_BASE_URL}/${productKey}/leads/upload`, {
-    method: "POST",
-    headers,
-    body: formData,
-  });
+  return new Promise((resolve, reject) => {
+    const request = new XMLHttpRequest();
+    request.open("POST", `${API_BASE_URL}/${productKey}/leads/upload`);
 
-  return parseResponse(response);
+    Object.entries(headers).forEach(([key, value]) => {
+      request.setRequestHeader(key, value);
+    });
+
+    request.upload.onprogress = (event) => {
+      if (!event.lengthComputable || typeof options.onUploadProgress !== "function") {
+        return;
+      }
+
+      options.onUploadProgress({
+        loaded: event.loaded,
+        total: event.total,
+        percent: Math.round((event.loaded / event.total) * 100),
+      });
+    };
+
+    request.onload = () => {
+      const payload = parsePayload(request.responseText);
+
+      if (request.status < 200 || request.status >= 300) {
+        reject(new Error(getResponseError(request.status, request.statusText, payload)));
+        return;
+      }
+
+      resolve(payload);
+    };
+
+    request.onerror = () => reject(new Error("Upload failed. Check network connection."));
+    request.onabort = () => reject(new Error("Upload cancelled."));
+    request.send(formData);
+  });
 }
 
-export async function uploadLeadFile(file, productKey = "retail") {
-  return uploadConsumerLeads(file, productKey);
+export async function uploadLeadFile(file, productKey = "retail", options = {}) {
+  return uploadConsumerLeads(file, productKey, options);
+}
+
+export async function getUploadProgress(progressId) {
+  const response = await fetch(
+    `${API_BASE_URL}/uploads/progress/${encodeURIComponent(progressId)}`,
+    {
+      headers: getAuthHeaders(),
+    },
+  );
+
+  return parseResponse(response);
 }
 
 export async function searchConsumerLeads(query, productKey = "consumer") {

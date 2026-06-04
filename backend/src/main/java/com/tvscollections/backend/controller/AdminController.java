@@ -28,6 +28,7 @@ import java.io.ByteArrayOutputStream;
 import java.time.LocalDate;
 import java.time.format.DateTimeParseException;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 
 @RestController
@@ -97,6 +98,19 @@ public class AdminController {
             return handleControllerError("Get dialer agent failed", error);
         } catch (Exception error) {
             return handleControllerError("Get dialer agent failed", error);
+        }
+    }
+
+    @PostMapping("/dialer/agents/status")
+    public ResponseEntity<?> getDialerAgentStatuses(@RequestBody Map<String, List<String>> request) {
+        try {
+            validateAdmin();
+            List<String> users = request.getOrDefault("users", List.of());
+            return ResponseEntity.ok(dialerProxyService.getAgentStatuses(users));
+        } catch (ResponseStatusException error) {
+            return handleControllerError("Get dialer agent statuses failed", error);
+        } catch (Exception error) {
+            return handleControllerError("Get dialer agent statuses failed", error);
         }
     }
 

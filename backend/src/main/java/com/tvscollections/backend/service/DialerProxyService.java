@@ -14,6 +14,12 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.CompletableFuture;
+import java.util.stream.Collectors;
 
 @Service
 public class DialerProxyService {
@@ -55,6 +61,41 @@ public class DialerProxyService {
         }
 
         return fetchFromVicidial("agent_status", agentUser.trim());
+    }
+
+    public Map<String, String> getAgentStatuses(List<String> agentUsers) {
+        if (agentUsers == null || agentUsers.isEmpty()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Missing agent users");
+        }
+
+        List<String> normalizedAgentUsers = agentUsers.stream()
+                .filter(StringUtils::hasText)
+                .map(String::trim)
+                .filter(agentUser -> agentUser.matches("[A-Za-z0-9_.-]{1,64}"))
+                .collect(Collectors.collectingAndThen(
+                        Collectors.toCollection(LinkedHashSet::new),
+                        List::copyOf
+                ));
+
+        if (normalizedAgentUsers.isEmpty()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Missing valid agent users");
+        }
+
+        Map<String, CompletableFuture<String>> pendingStatuses = new LinkedHashMap<>();
+        for (String agentUser : normalizedAgentUsers) {
+            pendingStatuses.put(agentUser, fetchFromVicidialAsync("agent_status", agentUser));
+        }
+
+        Map<String, String> statuses = new LinkedHashMap<>();
+        for (Map.Entry<String, CompletableFuture<String>> entry : pendingStatuses.entrySet()) {
+            try {
+                statuses.put(entry.getKey(), entry.getValue().join());
+            } catch (Exception error) {
+                statuses.put(entry.getKey(), "");
+            }
+        }
+
+        return statuses;
     }
 
     public String performAgentAction(String agentUser, DialerActionRequestDto request) {
@@ -124,6 +165,29 @@ public class DialerProxyService {
     }
 
     private String fetchFromVicidial(String function, String agentUser) {
+        return fetch(createVicidialUri(function, agentUser));
+    }
+
+    private CompletableFuture<String> fetchFromVicidialAsync(String function, String agentUser) {
+        HttpRequest request = HttpRequest.newBuilder(createVicidialUri(function, agentUser))
+                .timeout(timeout)
+                .GET()
+                .build();
+
+        return httpClient.sendAsync(request, HttpResponse.BodyHandlers.ofString())
+                .thenApply(response -> {
+                    if (response.statusCode() < 200 || response.statusCode() >= 300) {
+                        throw new ResponseStatusException(
+                                HttpStatus.BAD_GATEWAY,
+                                "Dialer upstream failed with HTTP " + response.statusCode()
+                        );
+                    }
+
+                    return response.body();
+                });
+    }
+
+    private URI createVicidialUri(String function, String agentUser) {
         UriComponentsBuilder builder = UriComponentsBuilder.newInstance()
                 .scheme("http")
                 .host(host)
@@ -139,7 +203,7 @@ public class DialerProxyService {
             builder.queryParam("agent_user", agentUser);
         }
 
-        return fetch(builder.build().encode().toUri());
+        return builder.build().encode().toUri();
     }
 
     private String fetch(URI uri) {

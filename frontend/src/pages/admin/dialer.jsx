@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { getDialerAgent, getDialerAgents } from "../../api/admin";
+import { getDialerAgent, getDialerAgents, getDialerAgentStatuses } from "../../api/admin";
 import { DataTable } from "./shared";
 import { formatNumber } from "./utils";
 
@@ -10,10 +10,13 @@ const LOW_CALL_COUNT_PRIORITY_CAMPAIGNS = new Set([
 ]);
 
 const DIALER_REFRESH_SECONDS = 4;
+const DIALER_AGENT_STATUS_REFRESH_SECONDS = 2;
+const DIALER_AGENT_STATUS_FALLBACK_CONCURRENCY = 4;
 const DIALER_PAUSE_WARN_SECONDS = 5 * 60;
 const DIALER_WAIT_WARN_SECONDS = 3 * 60;
 const DIALER_INCALL_WARN_SECONDS = 10 * 60;
 const DIALER_TIMER_STORAGE_KEY = "tvsDialerTimerState";
+const DIALER_SUB_STATUS_TIMER_STORAGE_KEY = "tvsDialerSubStatusTimerState";
 const WEBHOOK_SOCKET_URL = import.meta.env.VITE_WEBHOOK_SOCKET_URL || "http://192.168.114.241:3001";
 const DIALER_CAMPAIGNS = [
   "TVSCRCLP",
@@ -95,7 +98,9 @@ function parseDialerAgentStatusCsv(text) {
     return null;
   }
 
-  const headerRow = rows[0].map((header) => header.toLowerCase());
+  const headerRow = rows[0].map((header) =>
+    header.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, ""),
+  );
   const valueRow = headerRow.includes("status") ? rows[1] : rows[0];
 
   if (!valueRow) {
@@ -191,6 +196,37 @@ function readDialerTimerState() {
   }
 }
 
+function readDialerSubStatusTimerState() {
+  if (typeof window === "undefined") {
+    return {};
+  }
+
+  try {
+    const rawTimerState = window.localStorage.getItem(DIALER_SUB_STATUS_TIMER_STORAGE_KEY);
+    const parsedTimerState = rawTimerState ? JSON.parse(rawTimerState) : {};
+
+    if (!parsedTimerState || typeof parsedTimerState !== "object") {
+      return {};
+    }
+
+    return Object.fromEntries(
+      Object.entries(parsedTimerState).filter(
+        ([, timer]) =>
+          timer &&
+          typeof timer === "object" &&
+          typeof timer.leadId === "string" &&
+          typeof timer.sessionId === "string" &&
+          typeof timer.status === "string" &&
+          typeof timer.subStatus === "string" &&
+          (timer.timerType === "wrapDead" || timer.timerType === "dispo") &&
+          typeof timer.startedAt === "number",
+      ),
+    );
+  } catch {
+    return {};
+  }
+}
+
 function saveDialerTimerState(timerState) {
   if (typeof window === "undefined") {
     return;
@@ -199,6 +235,21 @@ function saveDialerTimerState(timerState) {
   try {
     window.localStorage.setItem(
       DIALER_TIMER_STORAGE_KEY,
+      JSON.stringify(timerState),
+    );
+  } catch {
+    // Storage can be unavailable in restricted browser modes. Timers still work in memory.
+  }
+}
+
+function saveDialerSubStatusTimerState(timerState) {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  try {
+    window.localStorage.setItem(
+      DIALER_SUB_STATUS_TIMER_STORAGE_KEY,
       JSON.stringify(timerState),
     );
   } catch {
@@ -220,6 +271,83 @@ function formatDuration(totalSeconds) {
   }
 
   return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+}
+
+function isWrapDeadSubStatus(subStatus) {
+  const normalizedSubStatus = String(subStatus || "").trim().toUpperCase();
+
+  return (
+    normalizedSubStatus === "DEAD" ||
+    normalizedSubStatus === "WRAP" ||
+    normalizedSubStatus === "WRAPUP" ||
+    normalizedSubStatus === "WRAP_UP"
+  );
+}
+
+function isDispoSubStatus(subStatus) {
+  const normalizedSubStatus = String(subStatus || "").trim().toUpperCase();
+
+  return (
+    normalizedSubStatus === "DISPO" ||
+    normalizedSubStatus === "DISPOSITION" ||
+    normalizedSubStatus === "DISPOSITIONING"
+  );
+}
+
+function syncDialerSubStatusTimerState(currentState, statusResults) {
+  const now = Date.now();
+  const nextState = {};
+
+  statusResults.forEach((result) => {
+    const agentUser = result.value?.agentUser;
+
+    if (!agentUser) {
+      return;
+    }
+
+    if (result.status !== "fulfilled" || !result.value.detail) {
+      if (currentState[agentUser]) {
+        nextState[agentUser] = currentState[agentUser];
+      }
+      return;
+    }
+
+    const { detail } = result.value;
+    const subStatus = String(detail.real_time_sub_status || "").trim().toUpperCase();
+    const status = String(detail.status || "").trim().toUpperCase();
+    const sessionId = String(detail.session_id || "").trim();
+    const leadId = String(detail.lead_id || "").trim();
+    const timerType = isWrapDeadSubStatus(subStatus)
+      ? "wrapDead"
+      : isDispoSubStatus(subStatus)
+        ? "dispo"
+        : "";
+
+    if (!timerType) {
+      return;
+    }
+
+    const previous = currentState[agentUser];
+    const shouldKeepTimer =
+      previous?.timerType === timerType &&
+      previous?.subStatus === subStatus &&
+      previous?.status === status &&
+      previous?.sessionId === sessionId &&
+      previous?.leadId === leadId;
+
+    nextState[agentUser] = shouldKeepTimer
+      ? previous
+      : {
+          leadId,
+          sessionId,
+          status,
+          subStatus,
+          timerType,
+          startedAt: now,
+        };
+  });
+
+  return nextState;
 }
 
 function getDialerElapsed(timerState, user, nowTick) {
@@ -265,6 +393,40 @@ function loadSocketIoClient(serverUrl) {
   });
 }
 
+async function mapWithConcurrency(items, concurrency, mapper) {
+  const results = new Array(items.length);
+  let nextIndex = 0;
+
+  async function worker() {
+    while (nextIndex < items.length) {
+      const currentIndex = nextIndex;
+      nextIndex += 1;
+
+      try {
+        results[currentIndex] = {
+          status: "fulfilled",
+          value: await mapper(items[currentIndex], currentIndex),
+        };
+      } catch (reason) {
+        results[currentIndex] = {
+          status: "rejected",
+          reason,
+          value: {
+            agentUser: items[currentIndex],
+            detail: null,
+          },
+        };
+      }
+    }
+  }
+
+  await Promise.all(
+    Array.from({ length: Math.min(concurrency, items.length) }, () => worker()),
+  );
+
+  return results;
+}
+
 function DialerStatusBadge({ status }) {
   const normalizedStatus = String(status || "UNKNOWN").toUpperCase();
 
@@ -307,6 +469,9 @@ function DialerTimer({ active, elapsedSeconds, type }) {
 
 function useDialerLiveState() {
   const [agents, setAgents] = useState([]);
+  const [subStatusTimerState, setSubStatusTimerState] = useState(() =>
+    readDialerSubStatusTimerState(),
+  );
   const [timerState, setTimerState] = useState(() => readDialerTimerState());
   const [nowTick, setNowTick] = useState(0);
   const [countdown, setCountdown] = useState(DIALER_REFRESH_SECONDS);
@@ -316,6 +481,9 @@ function useDialerLiveState() {
   const agentsRef = useRef([]);
   const timerStateRef = useRef(timerState);
   const nowTickRef = useRef(0);
+  const agentStatusRequestIdRef = useRef(0);
+  const isAgentStatusRefreshRunningRef = useRef(false);
+  const shouldUseAgentStatusFallbackRef = useRef(false);
 
   const loadDialerAgents = useCallback(async () => {
     try {
@@ -361,22 +529,6 @@ function useDialerLiveState() {
   }, [hasLoaded, loadDialerAgents]);
 
   useEffect(() => {
-    const timer = window.setInterval(() => {
-      setNowTick(Date.now());
-      setCountdown((current) => {
-        if (current <= 1) {
-          loadDialerAgents().catch(() => undefined);
-          return DIALER_REFRESH_SECONDS;
-        }
-
-        return current - 1;
-      });
-    }, 1000);
-
-    return () => window.clearInterval(timer);
-  }, [loadDialerAgents]);
-
-  useEffect(() => {
     agentsRef.current = agents;
   }, [agents]);
 
@@ -387,6 +539,111 @@ function useDialerLiveState() {
   useEffect(() => {
     nowTickRef.current = nowTick || Date.now();
   }, [nowTick]);
+
+  const loadAgentStatusDetails = useCallback(async () => {
+    if (isAgentStatusRefreshRunningRef.current) {
+      return;
+    }
+
+    const agentUsers = [
+      ...new Set(
+        agentsRef.current
+          .map((agent) => String(agent.user || "").trim())
+          .filter(Boolean),
+      ),
+    ];
+    const requestId = agentStatusRequestIdRef.current + 1;
+
+    agentStatusRequestIdRef.current = requestId;
+
+    if (agentUsers.length === 0) {
+      setSubStatusTimerState({});
+      saveDialerSubStatusTimerState({});
+      return;
+    }
+
+    isAgentStatusRefreshRunningRef.current = true;
+
+    try {
+      let results;
+
+      if (shouldUseAgentStatusFallbackRef.current) {
+        results = await mapWithConcurrency(
+          agentUsers,
+          DIALER_AGENT_STATUS_FALLBACK_CONCURRENCY,
+          async (agentUser) => ({
+            agentUser,
+            detail: parseDialerAgentStatusCsv(await getDialerAgent(agentUser)),
+          }),
+        );
+      } else {
+        try {
+          const agentStatusMap = await getDialerAgentStatuses(agentUsers);
+          results = agentUsers.map((agentUser) => ({
+            status: "fulfilled",
+            value: {
+              agentUser,
+              detail: parseDialerAgentStatusCsv(agentStatusMap?.[agentUser] || ""),
+            },
+          }));
+        } catch (batchError) {
+          shouldUseAgentStatusFallbackRef.current = true;
+          console.warn(
+            "[Dialer Dashboard] Batch agent detail endpoint unavailable; using per-agent fallback.",
+            batchError.message,
+          );
+          results = await mapWithConcurrency(
+            agentUsers,
+            DIALER_AGENT_STATUS_FALLBACK_CONCURRENCY,
+            async (agentUser) => ({
+              agentUser,
+              detail: parseDialerAgentStatusCsv(await getDialerAgent(agentUser)),
+            }),
+          );
+        }
+      }
+
+      if (agentStatusRequestIdRef.current !== requestId) {
+        return;
+      }
+
+      setSubStatusTimerState((currentState) => {
+        const nextState = syncDialerSubStatusTimerState(currentState, results);
+
+        saveDialerSubStatusTimerState(nextState);
+        return nextState;
+      });
+    } finally {
+      isAgentStatusRefreshRunningRef.current = false;
+    }
+  }, []);
+
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      setNowTick(Date.now());
+      setCountdown((current) => {
+        if (current <= 1) {
+          loadAgentStatusDetails().catch((statusError) => {
+            console.warn("[Dialer Dashboard] Agent detail refresh failed:", statusError.message);
+          });
+          loadDialerAgents().catch(() => undefined);
+          return DIALER_REFRESH_SECONDS;
+        }
+
+        const nextCountdown = current - 1;
+
+        if (nextCountdown % DIALER_AGENT_STATUS_REFRESH_SECONDS === 0) {
+          loadAgentStatusDetails().catch((statusError) => {
+            console.warn("[Dialer Dashboard] Agent detail refresh failed:", statusError.message);
+          });
+        }
+
+        return nextCountdown;
+      });
+    }, 1000);
+
+    return () => window.clearInterval(timer);
+  }, [loadAgentStatusDetails, loadDialerAgents]);
 
   const logBestAvailableAgent = useCallback(async (callData) => {
     const campaignId = String(callData.campaignId || "").toUpperCase();
@@ -567,6 +824,7 @@ function useDialerLiveState() {
 
   return {
     agents,
+    subStatusTimerState,
     timerState,
     nowTick,
     countdown,
@@ -579,6 +837,7 @@ export function DialerDashboard() {
   const dialerLive = useDialerLiveState();
   const {
     agents,
+    subStatusTimerState,
     timerState,
     nowTick,
     countdown,
@@ -719,6 +978,40 @@ export function DialerDashboard() {
             active={status === "INCALL"}
             elapsedSeconds={getDialerElapsed(timerState, agent.user, nowTick)}
             type="incall"
+          />
+        );
+      },
+      searchable: false,
+      sortable: false,
+    },
+    {
+      key: "wrapDeadTime",
+      label: "Wrap/Dead Time",
+      render: (agent) => {
+        const timer = subStatusTimerState[agent.user];
+
+        return (
+          <DialerTimer
+            active={timer?.timerType === "wrapDead"}
+            elapsedSeconds={getDialerElapsed(subStatusTimerState, agent.user, nowTick)}
+            type="pause"
+          />
+        );
+      },
+      searchable: false,
+      sortable: false,
+    },
+    {
+      key: "dispoTime",
+      label: "Dispo Time",
+      render: (agent) => {
+        const timer = subStatusTimerState[agent.user];
+
+        return (
+          <DialerTimer
+            active={timer?.timerType === "dispo"}
+            elapsedSeconds={getDialerElapsed(subStatusTimerState, agent.user, nowTick)}
+            type="wait"
           />
         );
       },

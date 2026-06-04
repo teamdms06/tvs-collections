@@ -66,6 +66,20 @@ export async function getDialerAgent(agentUser) {
   return parseResponse(response);
 }
 
+export async function getDialerAgentStatuses(agentUsers) {
+  const users = [...new Set(agentUsers.map((agentUser) => String(agentUser).trim()).filter(Boolean))];
+  const response = await fetch(
+    `${API_BASE_URL}/admin/dialer/agents/status`,
+    {
+      method: "POST",
+      headers: getAuthHeaders(),
+      body: JSON.stringify({ users }),
+    },
+  );
+
+  return parseResponse(response);
+}
+
 export async function getUploadedFiles() {
   const response = await fetch(`${API_BASE_URL}/admin/uploads`, {
     headers: getAuthHeaders(),

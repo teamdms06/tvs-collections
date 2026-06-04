@@ -6,6 +6,7 @@ import com.tvscollections.backend.model.UploadFileData;
 import com.tvscollections.backend.security.UserPrincipal;
 import com.tvscollections.backend.service.ProductAccessService;
 import com.tvscollections.backend.service.UploadFileDataService;
+import com.tvscollections.backend.service.UploadProgressService;
 import com.tvscollections.backend.service.UserDashboardService;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.HttpStatus;
@@ -26,13 +27,16 @@ public class LeadController {
     private final UploadFileDataService uploadFileDataService;
     private final ProductAccessService productAccessService;
     private final UserDashboardService userDashboardService;
+    private final UploadProgressService uploadProgressService;
 
     public LeadController(UploadFileDataService uploadFileDataService,
                           ProductAccessService productAccessService,
-                          UserDashboardService userDashboardService) {
+                          UserDashboardService userDashboardService,
+                          UploadProgressService uploadProgressService) {
         this.uploadFileDataService = uploadFileDataService;
         this.productAccessService = productAccessService;
         this.userDashboardService = userDashboardService;
+        this.uploadProgressService = uploadProgressService;
     }
 
     @GetMapping("/user/dashboard")
@@ -88,7 +92,9 @@ public class LeadController {
     }
 
     @PostMapping("/{productKey}/leads/upload")
-    public ResponseEntity<?> uploadLeads(@PathVariable("productKey") String productKey, @RequestParam("file") MultipartFile file) {
+    public ResponseEntity<?> uploadLeads(@PathVariable("productKey") String productKey,
+                                         @RequestParam("file") MultipartFile file,
+                                         @RequestParam(value = "progressId", required = false) String progressId) {
         try {
             System.out.println("Upload leads for product: " + productKey + " with file: " + (file != null ? file.getOriginalFilename() : "null"));
             validateProductAccess(productKey);
@@ -97,13 +103,31 @@ public class LeadController {
                 throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Excel file is required");
             }
 
-            UploadResultDto result = uploadFileDataService.uploadExcel(productKey, getCurrentUser().getUser(), file);
+            UploadResultDto result = uploadFileDataService.uploadExcel(productKey, getCurrentUser().getUser(), file, progressId);
             System.out.println("Upload completed for product: " + productKey + ". Saved records: " + result.validRecords);
             return ResponseEntity.ok(result);
         } catch (ResponseStatusException error) {
             return handleControllerError("Upload failed", error);
         } catch (Exception error) {
             return handleControllerError("Upload failed", error);
+        }
+    }
+
+    @GetMapping("/uploads/progress/{progressId}")
+    public ResponseEntity<?> getUploadProgress(@PathVariable("progressId") String progressId) {
+        try {
+            getCurrentUser();
+            Object progress = uploadProgressService.get(progressId);
+
+            if (progress == null) {
+                throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Upload progress not found");
+            }
+
+            return ResponseEntity.ok(progress);
+        } catch (ResponseStatusException error) {
+            return handleControllerError("Get upload progress failed", error);
+        } catch (Exception error) {
+            return handleControllerError("Get upload progress failed", error);
         }
     }
 

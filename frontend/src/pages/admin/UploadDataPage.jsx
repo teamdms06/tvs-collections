@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { getUploadedFiles, updateUploadedFileAccess } from "../../api/admin";
-import { uploadLeadFile } from "../../api/leads";
+import { getUploadProgress, uploadLeadFile } from "../../api/leads";
 import { productConfigs } from "../../data/formConfigs";
 import { DataTable, StatusBadge } from "./shared";
 import { formatDateTime, formatNumber } from "./utils";
@@ -21,6 +21,7 @@ export default function UploadDataPage({ notify, user }) {
   const [uploadResult, setUploadResult] = useState(null);
   const [, setUploadError] = useState("");
   const [isUploading, setIsUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(null);
   const [uploadedFiles, setUploadedFiles] = useState([]);
   const [uploadsError, setUploadsError] = useState("");
   const [updatingUploadId, setUpdatingUploadId] = useState(null);
@@ -51,6 +52,35 @@ export default function UploadDataPage({ notify, user }) {
     };
   }, [refreshKey]);
 
+  const resetUploadProgress = () => {
+    setUploadProgress(null);
+  };
+
+  const formatFileSize = (bytes) => {
+    const size = Number(bytes || 0);
+
+    if (size < 1024) {
+      return `${size} B`;
+    }
+
+    if (size < 1024 * 1024) {
+      return `${(size / 1024).toFixed(1)} KB`;
+    }
+
+    return `${(size / (1024 * 1024)).toFixed(1)} MB`;
+  };
+
+  const getRecordPercent = (progress) => {
+    if (!progress?.estimatedTotalRecords) {
+      return progress?.status === "completed" ? 100 : 0;
+    }
+
+    return Math.min(
+      100,
+      Math.round(((progress.recordsSaved || 0) / progress.estimatedTotalRecords) * 100),
+    );
+  };
+
   const handleUpload = async (event) => {
     event.preventDefault();
     const uploadForm = event.currentTarget;
@@ -64,11 +94,64 @@ export default function UploadDataPage({ notify, user }) {
     setIsUploading(true);
     setUploadError("");
     setUploadResult(null);
+    const progressId = `upload-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    let progressTimer = null;
+    setUploadProgress({
+      progressId,
+      phase: "uploading",
+      status: "running",
+      fileName: selectedFile.name,
+      fileSize: selectedFile.size,
+      uploadPercent: 0,
+      recordsSaved: 0,
+      estimatedTotalRecords: null,
+      message: "Preparing upload",
+    });
     notify("Uploading file. Please wait.", "info");
 
     try {
-      const result = await uploadLeadFile(selectedFile, selectedProduct);
+      progressTimer = window.setInterval(async () => {
+        try {
+          const progress = await getUploadProgress(progressId);
+          setUploadProgress((current) => ({
+            ...(current || {}),
+            ...progress,
+            uploadPercent: current?.uploadPercent ?? 100,
+          }));
+        } catch {
+          // The backend creates the progress entry after the file reaches the server.
+        }
+      }, 700);
+
+      const result = await uploadLeadFile(selectedFile, selectedProduct, {
+        progressId,
+        onUploadProgress: (progress) => {
+          setUploadProgress((current) => ({
+            ...(current || {}),
+            phase: progress.percent >= 100 ? "processing" : "uploading",
+            status: "running",
+            uploadPercent: progress.percent,
+            uploadedBytes: progress.loaded,
+            fileSize: progress.total || selectedFile.size,
+            message:
+              progress.percent >= 100
+                ? "File uploaded. Reading Excel rows..."
+                : "Uploading file to server",
+          }));
+        },
+      });
       setUploadResult(result);
+      setUploadProgress((current) => ({
+        ...(current || {}),
+        phase: "completed",
+        status: "completed",
+        uploadPercent: 100,
+        recordsSaved: result.validRecords || 0,
+        recordsRead: result.totalRecords || 0,
+        estimatedTotalRecords: result.totalRecords || 0,
+        uploadFileId: result.uploadFileId,
+        message: "Upload completed",
+      }));
       setSelectedFile(null);
       setRefreshKey((current) => current + 1);
       uploadForm.reset();
@@ -76,8 +159,17 @@ export default function UploadDataPage({ notify, user }) {
     } catch (error) {
       const message = error.message || "Upload failed.";
       setUploadError(message);
+      setUploadProgress((current) => ({
+        ...(current || {}),
+        phase: "failed",
+        status: "failed",
+        message,
+      }));
       notify(message, "error");
     } finally {
+      if (progressTimer) {
+        window.clearInterval(progressTimer);
+      }
       setIsUploading(false);
     }
   };
@@ -132,6 +224,7 @@ export default function UploadDataPage({ notify, user }) {
                 setSelectedFile(event.target.files?.[0] || null);
                 setUploadError("");
                 setUploadResult(null);
+                resetUploadProgress();
               }}
               type="file"
             />
@@ -143,6 +236,73 @@ export default function UploadDataPage({ notify, user }) {
           <button className="primary-action" disabled={isUploading} type="submit">
             {isUploading ? "Uploading..." : "Upload to Database"}
           </button>
+
+          {uploadProgress && (
+            <div className={`upload-progress upload-progress--${uploadProgress.status}`}>
+              <div className="upload-progress__header">
+                <div>
+                  <span>{uploadProgress.status === "failed" ? "Upload failed" : "Upload progress"}</span>
+                  <strong>{uploadProgress.fileName || selectedFile?.name || "Selected file"}</strong>
+                </div>
+                <b>
+                  {formatFileSize(uploadProgress.uploadedBytes || 0)} /{" "}
+                  {formatFileSize(uploadProgress.fileSize || selectedFile?.size || 0)}
+                </b>
+              </div>
+
+              <div className="upload-progress__steps" aria-label="Upload progress">
+                <div
+                  className={
+                    uploadProgress.uploadPercent >= 100
+                      ? "upload-progress-step upload-progress-step--done"
+                      : "upload-progress-step upload-progress-step--active"
+                  }
+                >
+                  <span>1</span>
+                  <strong>Transfer file</strong>
+                  <small>{uploadProgress.uploadPercent || 0}%</small>
+                </div>
+                <div
+                  className={
+                    uploadProgress.phase === "completed"
+                      ? "upload-progress-step upload-progress-step--done"
+                      : uploadProgress.phase === "processing"
+                        ? "upload-progress-step upload-progress-step--active"
+                        : "upload-progress-step"
+                  }
+                >
+                  <span>2</span>
+                  <strong>Read and save rows</strong>
+                  <small>{formatNumber(uploadProgress.recordsSaved || 0)} saved</small>
+                </div>
+                <div
+                  className={
+                    uploadProgress.phase === "completed"
+                      ? "upload-progress-step upload-progress-step--done"
+                      : "upload-progress-step"
+                  }
+                >
+                  <span>3</span>
+                  <strong>Complete</strong>
+                  <small>{uploadProgress.uploadFileId ? `File ID ${uploadProgress.uploadFileId}` : "Waiting"}</small>
+                </div>
+              </div>
+
+              <div className="upload-progress__bar" aria-hidden="true">
+                <span style={{ width: `${uploadProgress.uploadPercent || 0}%` }} />
+              </div>
+              <div className="upload-progress__bar upload-progress__bar--records" aria-hidden="true">
+                <span style={{ width: `${getRecordPercent(uploadProgress)}%` }} />
+              </div>
+
+              <p>
+                {uploadProgress.message || "Working..."}
+                {uploadProgress.estimatedTotalRecords
+                  ? ` (${formatNumber(uploadProgress.recordsSaved || 0)} of ${formatNumber(uploadProgress.estimatedTotalRecords)} records)`
+                  : ""}
+              </p>
+            </div>
+          )}
 
           {uploadResult && (
             <div className="upload-summary">
