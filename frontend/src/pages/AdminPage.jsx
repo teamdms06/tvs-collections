@@ -28,6 +28,7 @@ function AdminServiceLoader({ activeMenu, notify, user }) {
 
 export default function AdminPage({ onLogout, user }) {
   const [activeMenu, setActiveMenu] = useState("dashboard");
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [notice, setNotice] = useState(null);
 
   const notify = (message, type = "info") => {
@@ -46,7 +47,9 @@ export default function AdminPage({ onLogout, user }) {
   return (
     <main className="workspace-shell admin-workspace">
       <Toast notice={notice} onClose={() => setNotice(null)} />
-      <section className="admin-shell">
+      <section
+        className={`admin-shell ${isSidebarCollapsed ? "admin-shell--collapsed" : ""}`}
+      >
         <aside className="admin-sidebar" aria-label="Admin menu">
           <div className="admin-brand">
             <span aria-hidden="true">TVS</span>
@@ -57,26 +60,52 @@ export default function AdminPage({ onLogout, user }) {
           </div>
 
           <nav className="admin-menu">
-            {adminMenu.map((item) => (
-              <button
-                className={
-                  item.key === activeMenu
-                    ? "admin-menu-item admin-menu-item--active"
-                    : "admin-menu-item"
-                }
-                key={item.key}
-                onClick={() => setActiveMenu(item.key)}
-                type="button"
-              >
-                {item.label}
-              </button>
-            ))}
+            {adminMenu.map((item) => {
+              const Icon = item.icon;
+
+              return (
+                <button
+                  className={
+                    item.key === activeMenu
+                      ? "admin-menu-item admin-menu-item--active"
+                      : "admin-menu-item"
+                  }
+                  key={item.key}
+                  onClick={() => setActiveMenu(item.key)}
+                  title={isSidebarCollapsed ? item.label : undefined}
+                  type="button"
+                >
+                  {Icon && (
+                    <span className="admin-menu-icon" aria-hidden="true">
+                      <Icon />
+                    </span>
+                  )}
+                  <span className="admin-menu-label">{item.label}</span>
+                </button>
+              );
+            })}
           </nav>
+
+          <button
+            className="admin-sidebar-toggle"
+            onClick={() => setIsSidebarCollapsed((current) => !current)}
+            title={isSidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+            type="button"
+            aria-label={
+              isSidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"
+            }
+          >
+            <span aria-hidden="true">{isSidebarCollapsed ? "»" : "«"}</span>
+          </button>
 
           <div className="admin-sidebar-footer">
             <strong>{user.name}</strong>
             <span>{user.roles?.join(", ") || "Administrator"}</span>
-            <button className="secondary-action" onClick={onLogout} type="button">
+            <button
+              className="secondary-action"
+              onClick={onLogout}
+              type="button"
+            >
               Logout
             </button>
           </div>
@@ -87,13 +116,18 @@ export default function AdminPage({ onLogout, user }) {
             <div>
               <p className="eyebrow">Admin workspace</p>
               <h1>
-                {adminMenu.find((item) => item.key === activeMenu)?.label || "Dashboard"}
+                {adminMenu.find((item) => item.key === activeMenu)?.label ||
+                  "Dashboard"}
               </h1>
             </div>
             <span>{user.name}</span>
           </header>
           <div className="admin-content-scroll">
-            <AdminServiceLoader activeMenu={activeMenu} notify={notify} user={user} />
+            <AdminServiceLoader
+              activeMenu={activeMenu}
+              notify={notify}
+              user={user}
+            />
           </div>
         </div>
       </section>

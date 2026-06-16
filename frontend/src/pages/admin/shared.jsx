@@ -185,17 +185,21 @@ export function DataTable({
                 <td colSpan={columns.length}>{emptyText}</td>
               </tr>
             )}
-            {visibleRows.map((row, rowIndex) => (
-              <tr key={row.id || row.username || row.fileName || rowIndex}>
-                {columns.map((column) => (
-                  <td key={column.key}>
-                    {column.render
-                      ? column.render(row)
-                      : String(row[column.key] ?? "-")}
-                  </td>
-                ))}
-              </tr>
-            ))}
+            {visibleRows.map((row, rowIndex) => {
+              const rowNumber = (currentPage - 1) * selectedPageSize + rowIndex + 1;
+
+              return (
+                <tr key={row.id || row.username || row.fileName || rowIndex}>
+                  {columns.map((column) => (
+                    <td key={column.key}>
+                      {column.render
+                        ? column.render(row, rowNumber)
+                        : String(row[column.key] ?? "-")}
+                    </td>
+                  ))}
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </div>

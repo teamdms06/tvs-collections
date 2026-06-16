@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { getAdminDashboard } from "../../api/admin";
 import { DataTable, StatusBadge } from "./shared";
 import { DialerDashboard } from "./dialer";
+import { DialerAgentPage } from "./dialer-agent";
 import { formatDateTime, formatMinutes, formatNumber } from "./utils";
 
 export default function DashboardPage() {
@@ -44,11 +45,20 @@ export default function DashboardPage() {
 
   const statCards = useMemo(
     () => [
-      { label: "Uploaded files", value: formatNumber(dashboard?.uploadedFiles) },
+      {
+        label: "Uploaded files",
+        value: formatNumber(dashboard?.uploadedFiles),
+      },
       { label: "Total leads", value: formatNumber(dashboard?.totalLeads) },
-      { label: "Feedback today", value: formatNumber(dashboard?.feedbackToday) },
+      {
+        label: "Feedback today",
+        value: formatNumber(dashboard?.feedbackToday),
+      },
       { label: "Active users", value: formatNumber(dashboard?.activeUsers) },
-      { label: "Total feedback", value: formatNumber(dashboard?.totalFeedback) },
+      {
+        label: "Total feedback",
+        value: formatNumber(dashboard?.totalFeedback),
+      },
       {
         label: "Users enabled",
         value: `${formatNumber(dashboard?.enabledUsers)} / ${formatNumber(dashboard?.totalUsers)}`,
@@ -56,7 +66,9 @@ export default function DashboardPage() {
       { label: "Uploads today", value: formatNumber(dashboard?.uploadedToday) },
       {
         label: "Last refresh",
-        value: dashboard?.generatedAt ? formatDateTime(dashboard.generatedAt) : "-",
+        value: dashboard?.generatedAt
+          ? formatDateTime(dashboard.generatedAt)
+          : "-",
       },
     ],
     [dashboard],
@@ -64,7 +76,11 @@ export default function DashboardPage() {
 
   return (
     <div className="admin-dashboard-stack">
-      <div className="admin-dashboard-tabs" role="tablist" aria-label="Admin dashboard views">
+      <div
+        className="admin-dashboard-tabs"
+        role="tablist"
+        aria-label="Admin dashboard views"
+      >
         <button
           aria-selected={activeDashboardTab === "crm"}
           className={
@@ -91,12 +107,32 @@ export default function DashboardPage() {
         >
           Dialer-Dashboard
         </button>
+        <button
+          aria-selected={activeDashboardTab === "dialer-agents"}
+          className={
+            activeDashboardTab === "dialer-agents"
+              ? "admin-dashboard-tab admin-dashboard-tab--active"
+              : "admin-dashboard-tab"
+          }
+          onClick={() => setActiveDashboardTab("dialer-agents")}
+          role="tab"
+          type="button"
+        >
+          Dialer-Agents State
+        </button>
       </div>
 
-      {dashboardError && <p className="notice notice--error">{dashboardError}</p>}
-      {dashboardLoading && !dashboard && <p className="notice">Loading live dashboard data...</p>}
+      {dashboardError && (
+        <p className="notice notice--error">{dashboardError}</p>
+      )}
+      {dashboardLoading && !dashboard && (
+        <p className="notice">Loading live dashboard data...</p>
+      )}
 
-      <div className="admin-dashboard-tab-panel" hidden={activeDashboardTab !== "crm"}>
+      <div
+        className="admin-dashboard-tab-panel"
+        hidden={activeDashboardTab !== "crm"}
+      >
         <section className="admin-grid">
           {statCards.map((card) => (
             <article className="admin-card" key={card.label}>
@@ -114,7 +150,9 @@ export default function DashboardPage() {
                 {
                   key: "productName",
                   label: "Product",
-                  render: (product) => <strong>{product.productName || "-"}</strong>,
+                  render: (product) => (
+                    <strong>{product.productName || "-"}</strong>
+                  ),
                 },
                 { key: "productCode", label: "Code" },
                 {
@@ -132,25 +170,30 @@ export default function DashboardPage() {
           </article>
 
           <article className="admin-card admin-card--wide">
-            <h2>Active User Sessions</h2>
+            <h2>Today Call Count By Product</h2>
             <DataTable
               columns={[
                 {
-                  key: "username",
-                  label: "User",
-                  render: (session) => <strong>{session.username}</strong>,
+                  key: "productName",
+                  label: "Product",
+                  render: (product) => (
+                    <strong>
+                      {product.productName || product.productCode || "-"}
+                    </strong>
+                  ),
                 },
+                { key: "productCode", label: "Code" },
                 {
-                  key: "lastSeenAt",
-                  label: "Last seen",
-                  render: (session) => formatDateTime(session.lastSeenAt),
-                  sortValue: (session) => session.lastSeenAt || "",
+                  key: "calls",
+                  label: "Calls today",
+                  render: (product) => formatNumber(product.calls),
+                  sortValue: (product) => product.calls || 0,
                 },
               ]}
-              emptyText="No active user sessions found."
+              emptyText="No calls recorded for today."
               pageSize={5}
-              rows={dashboard?.activeUserSessions || []}
-              searchPlaceholder="Search sessions"
+              rows={dashboard?.todayCallCountsByProduct || []}
+              searchPlaceholder="Search products"
             />
           </article>
         </section>
@@ -165,10 +208,26 @@ export default function DashboardPage() {
                 render: (activity) => (
                   <strong>
                     {activity.name || activity.username || "-"}
-                    {activity.active && <span className="activity-live-dot">Live</span>}
+                    {activity.active && (
+                      <span className="activity-live-dot">Live</span>
+                    )}
                   </strong>
                 ),
-                searchValue: (activity) => `${activity.name || ""} ${activity.username || ""}`,
+                searchValue: (activity) =>
+                  `${activity.name || ""} ${activity.username || ""}`,
+              },
+              {
+                key: "productNames",
+                label: "Product",
+                render: (activity) =>
+                  (
+                    activity.accessProducts ||
+                    activity.productNames ||
+                    activity.productCodes ||
+                    []
+                  ).join(", ") || "-",
+                searchValue: (activity) =>
+                  `${(activity.accessProducts || []).join(" ")} ${(activity.productNames || []).join(" ")} ${(activity.productCodes || []).join(" ")}`,
               },
               {
                 key: "firstLoginAt",
@@ -179,7 +238,10 @@ export default function DashboardPage() {
               {
                 key: "lastLogoutAt",
                 label: "Last logout",
-                render: (activity) => (activity.active ? "Active" : formatDateTime(activity.lastLogoutAt)),
+                render: (activity) =>
+                  activity.active
+                    ? "Active"
+                    : formatDateTime(activity.lastLogoutAt),
                 sortValue: (activity) => activity.lastLogoutAt || "",
               },
               {
@@ -214,9 +276,13 @@ export default function DashboardPage() {
                 render: (activity) => (
                   <span className="activity-punch-summary">
                     {(activity.punches || []).map((punch, index) => (
-                      <span key={`${activity.userId}-${punch.loginAt}-${index}`}>
+                      <span
+                        key={`${activity.userId}-${punch.loginAt}-${index}`}
+                      >
                         {formatDateTime(punch.loginAt)} -{" "}
-                        {punch.logoutAt ? formatDateTime(punch.logoutAt) : "Active"}
+                        {punch.logoutAt
+                          ? formatDateTime(punch.logoutAt)
+                          : "Active"}
                       </span>
                     ))}
                   </span>
@@ -242,7 +308,8 @@ export default function DashboardPage() {
               {
                 key: "productName",
                 label: "Product",
-                render: (upload) => upload.productName || upload.productCode || "-",
+                render: (upload) =>
+                  upload.productName || upload.productCode || "-",
               },
               {
                 key: "validRecords",
@@ -255,7 +322,10 @@ export default function DashboardPage() {
                 key: "status",
                 label: "Status",
                 render: (upload) => (
-                  <StatusBadge status={upload.status || "-"} inactive={upload.status === "inactive"} />
+                  <StatusBadge
+                    status={upload.status || "-"}
+                    inactive={upload.status === "inactive"}
+                  />
                 ),
               },
               {
@@ -273,8 +343,18 @@ export default function DashboardPage() {
         </section>
       </div>
 
-      <div className="admin-dashboard-tab-panel" hidden={activeDashboardTab !== "dialer"}>
+      <div
+        className="admin-dashboard-tab-panel"
+        hidden={activeDashboardTab !== "dialer"}
+      >
         <DialerDashboard />
+      </div>
+
+      <div
+        className="admin-dashboard-tab-panel"
+        hidden={activeDashboardTab !== "dialer-agents"}
+      >
+        <DialerAgentPage />
       </div>
     </div>
   );

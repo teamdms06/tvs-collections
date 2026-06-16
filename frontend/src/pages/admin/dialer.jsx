@@ -35,30 +35,66 @@ const DIALER_CAMPAIGNS = [
   "TVSTRLF",
 ];
 const DIALER_ALLOWED_CAMPAIGNS = new Set(DIALER_CAMPAIGNS);
-const dialerStatuses = ["ALL", "READY", "PAUSED", "INCALL", "CLOSER"];
+const dialerStatuses = [
+  { key: "ALL", label: "ALL" },
+  { key: "READY", label: "READY" },
+  { key: "PAUSED", label: "PAUSED" },
+  { key: "INCALL", label: "In Call" },
+  { key: "INDEAD", label: "In Dead" },
+  { key: "DISPO", label: "In Dispo" },
+];
 
-function getDialerStatusCounts(agents) {
+function getAgentSubStatus(agent, subStatusesByUser = {}) {
+  return String(subStatusesByUser?.[agent.user] || "").trim().toUpperCase();
+}
+
+function isAgentInDead(agent, subStatusesByUser = {}) {
+  return isWrapDeadSubStatus(getAgentSubStatus(agent, subStatusesByUser));
+}
+
+function isAgentInDispo(agent, subStatusesByUser = {}) {
+  return isDispoSubStatus(getAgentSubStatus(agent, subStatusesByUser));
+}
+
+function getAgentDisplayStatus(agent, subStatusesByUser = {}) {
+  if (isAgentInDead(agent, subStatusesByUser)) {
+    return "INDEAD";
+  }
+
+  if (isAgentInDispo(agent, subStatusesByUser)) {
+    return "DISPO";
+  }
+
+  return String(agent.status || "UNKNOWN").trim().toUpperCase();
+}
+
+function getDialerStatusCounts(agents, subStatusesByUser = {}) {
   const counts = {
     total: agents.length,
     ready: 0,
     paused: 0,
     incall: 0,
-    closer: 0,
-    other: 0,
+    dead: 0,
+    dispo: 0,
   };
 
   for (const agent of agents) {
-    const status = agent.status.toUpperCase();
+    const status = getAgentDisplayStatus(agent, subStatusesByUser);
+
     if (status === "READY") {
       counts.ready += 1;
     } else if (status === "PAUSED") {
       counts.paused += 1;
     } else if (status === "INCALL") {
       counts.incall += 1;
-    } else if (status === "CLOSER") {
-      counts.closer += 1;
-    } else {
-      counts.other += 1;
+    }
+
+    if (status === "INDEAD") {
+      counts.dead += 1;
+    }
+
+    if (status === "DISPO") {
+      counts.dispo += 1;
     }
   }
 
@@ -294,6 +330,17 @@ function isDispoSubStatus(subStatus) {
   );
 }
 
+function getDialerDetailSubStatus(detail) {
+  return String(
+    detail?.real_time_sub_status ||
+      detail?.user_sub_status ||
+      detail?.sub_status ||
+      "",
+  )
+    .trim()
+    .toUpperCase();
+}
+
 function syncDialerSubStatusTimerState(currentState, statusResults) {
   const now = Date.now();
   const nextState = {};
@@ -313,7 +360,7 @@ function syncDialerSubStatusTimerState(currentState, statusResults) {
     }
 
     const { detail } = result.value;
-    const subStatus = String(detail.real_time_sub_status || "").trim().toUpperCase();
+    const subStatus = getDialerDetailSubStatus(detail);
     const status = String(detail.status || "").trim().toUpperCase();
     const sessionId = String(detail.session_id || "").trim();
     const leadId = String(detail.lead_id || "").trim();
@@ -348,6 +395,17 @@ function syncDialerSubStatusTimerState(currentState, statusResults) {
   });
 
   return nextState;
+}
+
+function getDialerSubStatusesByUser(statusResults) {
+  return Object.fromEntries(
+    statusResults
+      .filter((result) => result.status === "fulfilled" && result.value?.agentUser)
+      .map((result) => [
+        result.value.agentUser,
+        getDialerDetailSubStatus(result.value.detail),
+      ]),
+  );
 }
 
 function getDialerElapsed(timerState, user, nowTick) {
@@ -429,13 +487,25 @@ async function mapWithConcurrency(items, concurrency, mapper) {
 
 function DialerStatusBadge({ status }) {
   const normalizedStatus = String(status || "UNKNOWN").toUpperCase();
+  const statusClass =
+    normalizedStatus === "INDEAD"
+      ? "dead"
+      : normalizedStatus === "DISPO"
+        ? "dispo"
+        : normalizedStatus.toLowerCase();
+  const statusLabel =
+    normalizedStatus === "INDEAD"
+      ? "IN DEAD"
+      : normalizedStatus === "DISPO"
+        ? "IN DISPO"
+        : normalizedStatus;
 
   return (
     <span
-      className={`dialer-status dialer-status--${normalizedStatus.toLowerCase()}`}
+      className={`dialer-status dialer-status--${statusClass}`}
     >
       <span aria-hidden="true" />
-      {normalizedStatus}
+      {statusLabel}
     </span>
   );
 }
@@ -469,6 +539,7 @@ function DialerTimer({ active, elapsedSeconds, type }) {
 
 function useDialerLiveState() {
   const [agents, setAgents] = useState([]);
+  const [subStatusesByUser, setSubStatusesByUser] = useState({});
   const [subStatusTimerState, setSubStatusTimerState] = useState(() =>
     readDialerSubStatusTimerState(),
   );
@@ -557,6 +628,7 @@ function useDialerLiveState() {
     agentStatusRequestIdRef.current = requestId;
 
     if (agentUsers.length === 0) {
+      setSubStatusesByUser({});
       setSubStatusTimerState({});
       saveDialerSubStatusTimerState({});
       return;
@@ -607,6 +679,7 @@ function useDialerLiveState() {
         return;
       }
 
+      setSubStatusesByUser(getDialerSubStatusesByUser(results));
       setSubStatusTimerState((currentState) => {
         const nextState = syncDialerSubStatusTimerState(currentState, results);
 
@@ -824,6 +897,7 @@ function useDialerLiveState() {
 
   return {
     agents,
+    subStatusesByUser,
     subStatusTimerState,
     timerState,
     nowTick,
@@ -837,6 +911,7 @@ export function DialerDashboard() {
   const dialerLive = useDialerLiveState();
   const {
     agents,
+    subStatusesByUser,
     subStatusTimerState,
     timerState,
     nowTick,
@@ -847,7 +922,10 @@ export function DialerDashboard() {
   const [activeStatusFilter, setActiveStatusFilter] = useState("ALL");
   const [activeCampaignFilter, setActiveCampaignFilter] = useState("ALL");
 
-  const stats = useMemo(() => getDialerStatusCounts(agents), [agents]);
+  const stats = useMemo(
+    () => getDialerStatusCounts(agents, subStatusesByUser),
+    [agents, subStatusesByUser],
+  );
 
   const campaignAgents = useMemo(() => {
     if (activeCampaignFilter === "ALL") {
@@ -860,38 +938,51 @@ export function DialerDashboard() {
   }, [activeCampaignFilter, agents]);
 
   const campaignStats = useMemo(
-    () => getDialerStatusCounts(campaignAgents),
-    [campaignAgents],
+    () => getDialerStatusCounts(campaignAgents, subStatusesByUser),
+    [campaignAgents, subStatusesByUser],
   );
 
   const visibleAgents = useMemo(() => {
     return agents.filter((agent) => {
-      const statusMatches =
-        activeStatusFilter === "ALL" ||
-        agent.status.toUpperCase() === activeStatusFilter;
+      const normalizedStatus = getAgentDisplayStatus(agent, subStatusesByUser);
+      const statusMatches = (() => {
+        if (activeStatusFilter === "ALL") {
+          return true;
+        }
+
+        if (activeStatusFilter === "INDEAD") {
+          return normalizedStatus === "INDEAD";
+        }
+
+        if (activeStatusFilter === "DISPO") {
+          return normalizedStatus === "DISPO";
+        }
+
+        return normalizedStatus === activeStatusFilter;
+      })();
       const campaignMatches =
         activeCampaignFilter === "ALL" ||
         agent.campaignId.toUpperCase() === activeCampaignFilter;
 
       return statusMatches && campaignMatches;
     });
-  }, [activeCampaignFilter, activeStatusFilter, agents]);
+  }, [activeCampaignFilter, activeStatusFilter, agents, subStatusesByUser]);
 
   const statCards = [
     { key: "total", label: "Total Agents", value: stats.total },
     { key: "ready", label: "Ready", value: stats.ready },
     { key: "paused", label: "Paused", value: stats.paused },
     { key: "incall", label: "In Call", value: stats.incall },
-    { key: "closer", label: "Closer", value: stats.closer },
-    { key: "other", label: "Other", value: stats.other },
+    { key: "dead", label: "In Dead", value: stats.dead },
+    { key: "dispo", label: "In Dispo", value: stats.dispo },
   ];
   const campaignStatusBadges = [
     { key: "total", label: "Total", value: campaignStats.total },
     { key: "ready", label: "Ready", value: campaignStats.ready },
     { key: "paused", label: "Paused", value: campaignStats.paused },
     { key: "incall", label: "In Call", value: campaignStats.incall },
-    { key: "closer", label: "Closer", value: campaignStats.closer },
-    { key: "other", label: "Other", value: campaignStats.other },
+    { key: "dead", label: "In Dead", value: campaignStats.dead },
+    { key: "dispo", label: "In Dispo", value: campaignStats.dispo },
   ];
   const campaignSummaryLabel =
     activeCampaignFilter === "ALL" ? "All campaigns" : activeCampaignFilter;
@@ -918,7 +1009,7 @@ export function DialerDashboard() {
     {
       key: "status",
       label: "Status",
-      render: (agent) => <DialerStatusBadge status={agent.status} />,
+      render: (agent) => <DialerStatusBadge status={getAgentDisplayStatus(agent, subStatusesByUser)} />,
     },
     { key: "sessionId", label: "Session" },
     {
@@ -1060,15 +1151,15 @@ export function DialerDashboard() {
             {dialerStatuses.map((status) => (
               <button
                 className={
-                  activeStatusFilter === status
+                  activeStatusFilter === status.key
                     ? "dialer-filter-button dialer-filter-button--active"
                     : "dialer-filter-button"
                 }
-                key={status}
-                onClick={() => setActiveStatusFilter(status)}
+                key={status.key}
+                onClick={() => setActiveStatusFilter(status.key)}
                 type="button"
               >
-                {status === "INCALL" ? "In Call" : status}
+                {status.label}
               </button>
             ))}
           </div>

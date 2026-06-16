@@ -1,5 +1,6 @@
 package com.tvscollections.backend.service;
 
+import com.tvscollections.backend.dto.ProductSummaryDto;
 import com.tvscollections.backend.model.Product;
 import com.tvscollections.backend.model.Role;
 import com.tvscollections.backend.model.User;
@@ -11,6 +12,7 @@ import org.springframework.util.StringUtils;
 
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -28,6 +30,10 @@ public class ProductAccessService {
 
     @Transactional(readOnly = true)
     public List<String> getAccessibleProductCodes(User user) {
+        if (user == null) {
+            return List.of();
+        }
+
         Set<String> codes = new HashSet<>();
         List<Product> activeProducts = productRepository.findAll().stream()
                 .filter(Product::isActive)
@@ -60,6 +66,27 @@ public class ProductAccessService {
         }
 
         return codes.stream().sorted().collect(Collectors.toList());
+    }
+
+    @Transactional(readOnly = true)
+    public List<ProductSummaryDto> getAccessibleProducts(User user) {
+        if (user == null) {
+            return List.of();
+        }
+
+        Map<String, Product> activeProductsByCode = productRepository.findAll().stream()
+                .filter(Product::isActive)
+                .collect(Collectors.toMap(
+                        product -> normalizeProductCode(product.code),
+                        product -> product,
+                        (existing, ignored) -> existing
+                ));
+
+        return getAccessibleProductCodes(user).stream()
+                .map(activeProductsByCode::get)
+                .filter(product -> product != null)
+                .map(ProductSummaryDto::new)
+                .toList();
     }
 
     private void addInferredProductAccess(Set<String> codes, List<Product> activeProducts, String roleName) {

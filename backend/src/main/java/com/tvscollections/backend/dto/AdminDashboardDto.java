@@ -14,6 +14,7 @@ public class AdminDashboardDto {
     public Long uploadedToday;
     public LocalDateTime generatedAt;
     public List<ProductCountDto> productCounts;
+    public List<ProductCallCountDto> todayCallCountsByProduct;
     public List<ActiveUserDto> activeUserSessions;
     public List<AgentActivitySummaryDto> agentActivities;
     public List<RecentUploadDto> recentUploads;
@@ -28,6 +29,7 @@ public class AdminDashboardDto {
                              Long uploadedToday,
                              LocalDateTime generatedAt,
                              List<ProductCountDto> productCounts,
+                             List<ProductCallCountDto> todayCallCountsByProduct,
                              List<ActiveUserDto> activeUserSessions,
                              List<AgentActivitySummaryDto> agentActivities,
                              List<RecentUploadDto> recentUploads) {
@@ -41,6 +43,7 @@ public class AdminDashboardDto {
         this.uploadedToday = uploadedToday;
         this.generatedAt = generatedAt;
         this.productCounts = productCounts;
+        this.todayCallCountsByProduct = todayCallCountsByProduct;
         this.activeUserSessions = activeUserSessions;
         this.agentActivities = agentActivities;
         this.recentUploads = recentUploads;

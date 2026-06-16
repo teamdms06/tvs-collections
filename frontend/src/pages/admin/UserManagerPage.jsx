@@ -6,6 +6,7 @@ import {
   updateAdminUserAccess,
 } from "../../api/admin";
 import { DataTable, StatusBadge } from "./shared";
+import { formatDateTime } from "./utils";
 
 const emptyUserForm = {
   name: "",
@@ -165,7 +166,11 @@ export default function UserManagerPage({ notify }) {
       <section className="admin-card admin-card--wide">
         <div className="admin-section-heading">
           <h2>User Manager</h2>
-          <button className="primary-action" onClick={openAddUserForm} type="button">
+          <button
+            className="primary-action"
+            onClick={openAddUserForm}
+            type="button"
+          >
             Add New User
           </button>
         </div>
@@ -185,7 +190,9 @@ export default function UserManagerPage({ notify }) {
             <label className="form-field">
               <span>Username</span>
               <input
-                onChange={(event) => updateUserForm("username", event.target.value)}
+                onChange={(event) =>
+                  updateUserForm("username", event.target.value)
+                }
                 required
                 value={userForm.username}
               />
@@ -194,16 +201,26 @@ export default function UserManagerPage({ notify }) {
               <span>Dialer User</span>
               <input
                 name="dialer_user"
-                onChange={(event) => updateUserForm("dialerUser", event.target.value)}
+                onChange={(event) =>
+                  updateUserForm("dialerUser", event.target.value)
+                }
                 required
                 value={userForm.dialerUser}
               />
             </label>
             <label className="form-field">
-              <span>{userFormMode === "edit" ? "New Password" : "Password"}</span>
+              <span>
+                {userFormMode === "edit" ? "New Password" : "Password"}
+              </span>
               <input
-                onChange={(event) => updateUserForm("password", event.target.value)}
-                placeholder={userFormMode === "edit" ? "Leave blank to keep current password" : ""}
+                onChange={(event) =>
+                  updateUserForm("password", event.target.value)
+                }
+                placeholder={
+                  userFormMode === "edit"
+                    ? "Leave blank to keep current password"
+                    : ""
+                }
                 required={userFormMode === "add"}
                 type="password"
                 value={userForm.password}
@@ -212,12 +229,17 @@ export default function UserManagerPage({ notify }) {
             <label className="form-field">
               <span>Role</span>
               <select
-                onChange={(event) => updateUserForm("roles", [event.target.value])}
+                onChange={(event) =>
+                  updateUserForm("roles", [event.target.value])
+                }
                 required
                 value={userForm.roles[0] || ""}
               >
                 <option value="">Select role</option>
-                {(userOptions.roles.length ? userOptions.roles : ["admin", "agent"]).map((role) => (
+                {(userOptions.roles.length
+                  ? userOptions.roles
+                  : ["admin", "agent"]
+                ).map((role) => (
                   <option key={role} value={role}>
                     {role}
                   </option>
@@ -237,10 +259,18 @@ export default function UserManagerPage({ notify }) {
               </select>
             </label>
             <div className="form-actions admin-user-form-actions">
-              <button className="secondary-action" onClick={closeUserForm} type="button">
+              <button
+                className="secondary-action"
+                onClick={closeUserForm}
+                type="button"
+              >
                 Cancel
               </button>
-              <button className="primary-action" disabled={savingUser} type="submit">
+              <button
+                className="primary-action"
+                disabled={savingUser}
+                type="submit"
+              >
                 {savingUser
                   ? "Saving..."
                   : userFormMode === "edit"
@@ -254,9 +284,23 @@ export default function UserManagerPage({ notify }) {
         <DataTable
           columns={[
             {
+              key: "serialNumber",
+              label: "S. No.",
+              render: (_managedUser, rowNumber) => rowNumber,
+              searchable: false,
+              sortable: false,
+            },
+            {
+              key: "createdAt",
+              label: "Created Date",
+              render: (managedUser) => formatDateTime(managedUser.createdAt),
+            },
+            {
               key: "name",
               label: "Name",
-              render: (managedUser) => <strong>{managedUser.name || "-"}</strong>,
+              render: (managedUser) => (
+                <strong>{managedUser.name || "-"}</strong>
+              ),
             },
             { key: "username", label: "Username" },
             { key: "dialerUser", label: "Dialer User" },
@@ -269,8 +313,10 @@ export default function UserManagerPage({ notify }) {
             {
               key: "accessProducts",
               label: "Access",
-              render: (managedUser) => managedUser.accessProducts?.join(", ") || "-",
-              searchValue: (managedUser) => managedUser.accessProducts?.join(" ") || "",
+              render: (managedUser) =>
+                managedUser.accessProducts?.join(", ") || "-",
+              searchValue: (managedUser) =>
+                managedUser.accessProducts?.join(" ") || "",
             },
             {
               key: "isActive",
@@ -303,12 +349,20 @@ export default function UserManagerPage({ notify }) {
                       Edit
                     </button>
                     <button
-                      className={isActiveUser ? "danger-action" : "secondary-action"}
+                      className={
+                        isActiveUser ? "danger-action" : "secondary-action"
+                      }
                       disabled={isUpdating}
-                      onClick={() => changeUserAccess(managedUser.id, !isActiveUser)}
+                      onClick={() =>
+                        changeUserAccess(managedUser.id, !isActiveUser)
+                      }
                       type="button"
                     >
-                      {isUpdating ? "Updating..." : isActiveUser ? "Deactivate" : "Activate"}
+                      {isUpdating
+                        ? "Updating..."
+                        : isActiveUser
+                          ? "Deactivate"
+                          : "Activate"}
                     </button>
                   </span>
                 );

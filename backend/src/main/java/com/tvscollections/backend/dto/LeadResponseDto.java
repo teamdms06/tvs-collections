@@ -7,7 +7,7 @@ import java.util.List;
 
 public class LeadResponseDto {
     public Long id;
-    public ProductSummaryDto product;
+    public ProductSummaryDto productId;
     public String listId;
     public String agreementNumber;
     public String uid;
@@ -27,6 +27,7 @@ public class LeadResponseDto {
     public Integer emi;
     public String otherDetails;
     public String finalOpeningBktStatus;
+    public String product;
     public String model;
     public String dpdDelString;
     public String branchName;
@@ -55,7 +56,7 @@ public class LeadResponseDto {
 
     public LeadResponseDto(UploadFileData lead, List<FeedbackHistoryDto> feedbackHistory) {
         this.id = lead.id;
-        this.product = lead.product == null ? null : new ProductSummaryDto(lead.product);
+        this.productId = lead.productId == null ? null : new ProductSummaryDto(lead.productId);
         this.listId = lead.listId;
         this.agreementNumber = lead.agreementNumber;
         this.uid = lead.uid;
@@ -75,6 +76,7 @@ public class LeadResponseDto {
         this.emi = lead.emi;
         this.otherDetails = lead.otherDetails;
         this.finalOpeningBktStatus = lead.finalOpeningBktStatus;
+        this.product = lead.product;
         this.model = lead.model;
         this.dpdDelString = lead.dpdDelString;
         this.branchName = lead.branchName;

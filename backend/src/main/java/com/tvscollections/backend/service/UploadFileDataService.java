@@ -18,6 +18,9 @@ import com.tvscollections.backend.repository.ProductRepository;
 import com.tvscollections.backend.repository.UploadFileRepository;
 import com.tvscollections.backend.repository.UploadFileDataRepository;
 import com.tvscollections.backend.repository.UserRepository;
+import org.apache.poi.openxml4j.exceptions.OpenXML4JException;
+import org.apache.poi.openxml4j.opc.OPCPackage;
+import org.apache.poi.ooxml.util.SAXHelper;
 import org.apache.poi.ss.usermodel.Cell;
 import org.apache.poi.ss.usermodel.CellType;
 import org.apache.poi.ss.usermodel.DateUtil;
@@ -26,13 +29,23 @@ import org.apache.poi.ss.usermodel.Row;
 import org.apache.poi.ss.usermodel.Sheet;
 import org.apache.poi.ss.usermodel.Workbook;
 import org.apache.poi.ss.usermodel.WorkbookFactory;
+import org.apache.poi.ss.util.CellReference;
+import org.apache.poi.xssf.eventusermodel.ReadOnlySharedStringsTable;
+import org.apache.poi.xssf.eventusermodel.XSSFReader;
+import org.apache.poi.xssf.eventusermodel.XSSFSheetXMLHandler;
+import org.apache.poi.xssf.model.StylesTable;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.multipart.MultipartFile;
+import org.xml.sax.ContentHandler;
+import org.xml.sax.InputSource;
+import org.xml.sax.SAXException;
+import org.xml.sax.XMLReader;
 
+import javax.xml.parsers.ParserConfigurationException;
 import java.io.IOException;
 import java.io.InputStream;
 import java.math.BigDecimal;
@@ -44,6 +57,7 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.time.format.DateTimeFormatter;
+import java.time.format.DateTimeFormatterBuilder;
 import java.time.format.DateTimeParseException;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
@@ -58,6 +72,10 @@ import java.util.Optional;
 public class UploadFileDataService {
     private static final int INSERT_BATCH_SIZE = 500;
     private static final int SEARCH_RESULT_LIMIT = 50;
+
+    // Logger for debugging and warning messages
+    private static final org.slf4j.Logger logger =
+            org.slf4j.LoggerFactory.getLogger(UploadFileDataService.class);
 
     private final UploadFileDataRepository uploadFileDataRepository;
     private final UploadFileRepository uploadFileRepository;
@@ -217,6 +235,7 @@ public class UploadFileDataService {
                     u.dealer_name,
                     u.portfolio,
                     u.amount_financed,
+                    u.product,
                     u.first_emi_date,
                     u.last_emi_date,
                     u.bounce_reason,
@@ -253,7 +272,7 @@ public class UploadFileDataService {
     private LeadResponseDto mapLeadSummary(ResultSet resultSet, Product product) throws SQLException {
         LeadResponseDto lead = new LeadResponseDto();
         lead.id = resultSet.getLong("id");
-        lead.product = new ProductSummaryDto(product);
+        lead.productId = new ProductSummaryDto(product);
         lead.listId = resultSet.getString("list_id");
         lead.agreementNumber = resultSet.getString("agreement_number");
         lead.uid = resultSet.getString("uid");
@@ -273,6 +292,7 @@ public class UploadFileDataService {
         lead.emi = integerOrNull(resultSet, "emi");
         lead.otherDetails = resultSet.getString("other_details");
         lead.finalOpeningBktStatus = resultSet.getString("final_opening_bkt_status");
+        lead.product = resultSet.getString("product");
         lead.model = resultSet.getString("model");
         lead.dpdDelString = resultSet.getString("dpd_del_string");
         lead.branchName = resultSet.getString("branch_name");
@@ -509,6 +529,18 @@ public class UploadFileDataService {
                                        Product product,
                                        UploadFile uploadFile,
                                        String progressId) throws IOException {
+        String fileName = file.getOriginalFilename() == null ? "" : file.getOriginalFilename().toLowerCase(Locale.ROOT);
+        if (fileName.endsWith(".xlsx")) {
+            return readAndInsertXlsxRowsStreaming(file, product, uploadFile, progressId);
+        }
+
+        return readAndInsertWorkbookRows(file, product, uploadFile, progressId);
+    }
+
+    private int readAndInsertWorkbookRows(MultipartFile file,
+                                          Product product,
+                                          UploadFile uploadFile,
+                                          String progressId) throws IOException {
         try (InputStream inputStream = file.getInputStream();
              Workbook workbook = WorkbookFactory.create(inputStream)) {
             Sheet sheet = workbook.getSheetAt(0);
@@ -534,7 +566,7 @@ public class UploadFileDataService {
 
                 UploadFileData record = new UploadFileData();
                 record.uploadFile = uploadFile;
-                record.product = product;
+                record.productId = product;
 
                 Map<String, String> values = readRowValues(row, headers, formatter);
                 mapValues(record, values);
@@ -555,6 +587,167 @@ public class UploadFileDataService {
                 savedRecordCount += batch.size();
                 batch.clear();
                 uploadProgressService.batchSaved(progressId, readRecordCount, savedRecordCount);
+            }
+
+            return savedRecordCount;
+        }
+    }
+
+    private int readAndInsertXlsxRowsStreaming(MultipartFile file,
+                                               Product product,
+                                               UploadFile uploadFile,
+                                               String progressId) throws IOException {
+        try (InputStream inputStream = file.getInputStream();
+             OPCPackage opcPackage = OPCPackage.open(inputStream)) {
+            ReadOnlySharedStringsTable sharedStrings = new ReadOnlySharedStringsTable(opcPackage);
+            XSSFReader reader = new XSSFReader(opcPackage);
+            StylesTable styles = reader.getStylesTable();
+            XSSFReader.SheetIterator sheets = (XSSFReader.SheetIterator) reader.getSheetsData();
+
+            if (!sheets.hasNext()) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Excel sheet not found");
+            }
+
+            XlsxUploadSheetHandler sheetHandler = new XlsxUploadSheetHandler(product, uploadFile, progressId);
+            XMLReader parser = SAXHelper.newXMLReader();
+            ContentHandler handler = new XSSFSheetXMLHandler(
+                    styles,
+                    null,
+                    sharedStrings,
+                    sheetHandler,
+                    new DataFormatter(),
+                    false
+            );
+            parser.setContentHandler(handler);
+
+            try (InputStream sheetInputStream = sheets.next()) {
+                parser.parse(new InputSource(sheetInputStream));
+            }
+
+            if (!sheetHandler.headerFound) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Header row not found");
+            }
+
+            return sheetHandler.finish();
+        } catch (OpenXML4JException | ParserConfigurationException | SAXException error) {
+            throw new IOException("Could not stream Excel file", error);
+        }
+    }
+
+    private class XlsxUploadSheetHandler implements XSSFSheetXMLHandler.SheetContentsHandler {
+        private final Product product;
+        private final UploadFile uploadFile;
+        private final String progressId;
+        private final Map<Integer, String> headers = new HashMap<>();
+        private final List<UploadFileData> batch = new ArrayList<>(INSERT_BATCH_SIZE);
+        private Map<Integer, String> currentRowValues = new HashMap<>();
+        private boolean headerFound = false;
+        private int savedRecordCount = 0;
+        private int readRecordCount = 0;
+
+        private XlsxUploadSheetHandler(Product product, UploadFile uploadFile, String progressId) {
+            this.product = product;
+            this.uploadFile = uploadFile;
+            this.progressId = progressId;
+        }
+
+        @Override
+        public void startRow(int rowNum) {
+            currentRowValues = new HashMap<>();
+        }
+
+        @Override
+        public void endRow(int rowNum) {
+            if (!headerFound) {
+                readStreamingHeader();
+                return;
+            }
+
+            if (isBlankStreamingRow()) {
+                return;
+            }
+
+            UploadFileData record = new UploadFileData();
+            record.uploadFile = uploadFile;
+            record.productId = product;
+
+            Map<String, String> values = readStreamingRowValues();
+            mapValues(record, values);
+            record.rawData = toJson(values);
+            batch.add(record);
+            readRecordCount++;
+
+            if (batch.size() >= INSERT_BATCH_SIZE) {
+                flushBatch();
+            }
+        }
+
+        @Override
+        public void cell(String cellReference, String formattedValue, org.apache.poi.xssf.usermodel.XSSFComment comment) {
+            int columnIndex = cellReference == null
+                    ? currentRowValues.size()
+                    : new CellReference(cellReference).getCol();
+            currentRowValues.put(columnIndex, formattedValue == null ? "" : formattedValue.trim());
+        }
+
+        @Override
+        public void headerFooter(String text, boolean isHeader, String tagName) {
+            // Not used for upload rows.
+        }
+
+        private void readStreamingHeader() {
+            List<String> normalizedCells = new ArrayList<>();
+            for (String value : currentRowValues.values()) {
+                normalizedCells.add(normalizeHeader(value));
+            }
+
+            if (!normalizedCells.contains("agreementnumber")
+                    || (!normalizedCells.contains("customermobile")
+                    && !normalizedCells.contains("mobilenumber"))) {
+                return;
+            }
+
+            for (Map.Entry<Integer, String> cell : currentRowValues.entrySet()) {
+                String header = normalizeHeader(cell.getValue());
+                if (!header.isBlank()) {
+                    headers.put(cell.getKey(), header);
+                }
+            }
+
+            headerFound = true;
+            uploadProgressService.processing(progressId, uploadFile.id, null);
+        }
+
+        private boolean isBlankStreamingRow() {
+            for (String value : currentRowValues.values()) {
+                if (value != null && !value.trim().isBlank()) {
+                    return false;
+                }
+            }
+
+            return true;
+        }
+
+        private Map<String, String> readStreamingRowValues() {
+            Map<String, String> values = new HashMap<>();
+
+            for (Map.Entry<Integer, String> header : headers.entrySet()) {
+                values.put(header.getValue(), currentRowValues.getOrDefault(header.getKey(), ""));
+            }
+
+            return values;
+        }
+
+        private void flushBatch() {
+            batchInsertRows(batch);
+            savedRecordCount += batch.size();
+            batch.clear();
+            uploadProgressService.batchSaved(progressId, readRecordCount, savedRecordCount);
+        }
+
+        private int finish() {
+            if (!batch.isEmpty()) {
+                flushBatch();
             }
 
             return savedRecordCount;
@@ -620,8 +813,8 @@ public class UploadFileDataService {
         record.dealerName = value(values, "dealername");
         record.portfolio = value(values, "portfolio");
         record.amountFinanced = integerValue(values, "amountfinanced");
-        record.firstEmiDate = value(values, "firstemidate");
-        record.lastEmiDate = value(values, "lastemidate");
+        record.firstEmiDate = normalizeDate(value(values, "firstemidate"));
+        record.lastEmiDate = normalizeDate(value(values, "lastemidate"));
         record.bounceReason = value(values, "bouncereason");
         record.tenor = integerValue(values, "tenor");
         record.emi = integerValue(values, "emi");
@@ -677,6 +870,48 @@ public class UploadFileDataService {
         }
 
         return header.toLowerCase(Locale.ROOT).replaceAll("[^a-z0-9]", "");
+    }
+
+    private static final DateTimeFormatter DATE_OUTPUT = DateTimeFormatter.ofPattern("yyyy-MM-dd");
+        private static final DateTimeFormatter[] DATE_INPUT_FORMATTERS = {
+            DateTimeFormatter.ofPattern("yyyy-MM-dd"),
+            DateTimeFormatter.ofPattern("yyyy/MM/dd"),
+            DateTimeFormatter.ofPattern("M/d/yyyy"),
+            DateTimeFormatter.ofPattern("M/d/yy"),
+            DateTimeFormatter.ofPattern("dd/MM/yyyy"),
+            DateTimeFormatter.ofPattern("dd-MM-yyyy"),
+            DateTimeFormatter.ofPattern("d/M/yyyy"),
+            DateTimeFormatter.ofPattern("d-M-yyyy"),
+            new DateTimeFormatterBuilder().parseCaseInsensitive()
+                .appendPattern("d-MMM-yyyy").toFormatter(Locale.ENGLISH),
+            new DateTimeFormatterBuilder().parseCaseInsensitive()
+                .appendPattern("d-MMM-yy").toFormatter(Locale.ENGLISH),
+            new DateTimeFormatterBuilder().parseCaseInsensitive()
+                .appendPattern("dd MMM yyyy").toFormatter(Locale.ENGLISH)
+        };
+
+    private String normalizeDate(String raw) {
+        if (raw == null || raw.isBlank()) {
+            return null;
+        }
+
+        String trimmed = raw.trim();
+        for (DateTimeFormatter formatter : DATE_INPUT_FORMATTERS) {
+            try {
+                return LocalDate.parse(trimmed, formatter).format(DATE_OUTPUT);
+            } catch (DateTimeParseException ignored) {
+                // Try next supported date format.
+            }
+        }
+
+        try {
+            return LocalDateTime.parse(trimmed).toLocalDate().format(DATE_OUTPUT);
+        } catch (DateTimeParseException ignored) {
+            // Fall through to warning below.
+        }
+
+        logger.warn("Could not parse date value '{}'; storing null to avoid DB invalid date error", trimmed);
+        return null;
     }
 
     private String value(Map<String, String> values, String... keys) {
@@ -776,7 +1011,7 @@ public class UploadFileDataService {
         jdbcTemplate.batchUpdate(sql, rows, INSERT_BATCH_SIZE, (statement, row) -> {
             int index = 1;
             statement.setLong(index++, row.uploadFile.id);
-            statement.setLong(index++, row.product.id);
+            statement.setLong(index++, row.productId.id);
             statement.setString(index++, row.listId);
             statement.setString(index++, row.agreementNumber);
             statement.setString(index++, row.uid);

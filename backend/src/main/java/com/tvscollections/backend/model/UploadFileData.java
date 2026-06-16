@@ -29,7 +29,7 @@ public class UploadFileData {
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "product_id", nullable = false)
-    public Product product;
+    public Product productId;
 
     @Column(name = "list_id", length = 100)
     public String listId;
@@ -66,6 +66,9 @@ public class UploadFileData {
 
     @Column(name = "amount_financed", precision = 12, scale = 2)
     public Integer amountFinanced;
+
+    @Column(name = "product")
+    public String product;    
 
     @Column(name = "first_emi_date")
     public String firstEmiDate;

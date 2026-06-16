@@ -15,7 +15,7 @@ public interface UploadFileDataRepository extends JpaRepository<UploadFileData, 
     @Query("""
             SELECT u
             FROM UploadFileData u
-            WHERE u.product.code = :productCode
+            WHERE u.productId.code = :productCode
                 AND u.uploadFile.status <> :inactiveStatus
                 AND (
                     LOWER(u.agreementNumber) LIKE LOWER(CONCAT('%', :query, '%'))
@@ -30,7 +30,7 @@ public interface UploadFileDataRepository extends JpaRepository<UploadFileData, 
     @Query("""
             SELECT u
             FROM UploadFileData u
-            WHERE u.product.code = :productCode
+            WHERE u.productId.code = :productCode
                 AND u.uploadFile.status <> :inactiveStatus
                 AND TRIM(u.mobileNumber) = :mobileNumber
             ORDER BY u.uploadFile.uploadedAt DESC, u.uploadFile.id DESC, u.id DESC
@@ -43,7 +43,7 @@ public interface UploadFileDataRepository extends JpaRepository<UploadFileData, 
     @Query("""
             SELECT u
             FROM UploadFileData u
-            WHERE u.product.code = :productCode
+            WHERE u.productId.code = :productCode
                 AND u.uploadFile.status <> :inactiveStatus
                 AND TRIM(LOWER(u.agreementNumber)) = TRIM(LOWER(:agreementNumber))
             ORDER BY u.uploadFile.uploadedAt DESC, u.uploadFile.id DESC, u.id DESC
@@ -57,24 +57,37 @@ public interface UploadFileDataRepository extends JpaRepository<UploadFileData, 
             SELECT u
             FROM UploadFileData u
             WHERE u.id = :id
-                AND u.product.code = :productCode
+                AND u.productId.code = :productCode
                 AND u.uploadFile.status <> :inactiveStatus
             """)
     Optional<UploadFileData> findActiveByIdAndProductCode(@Param("id") Long id,
                                                           @Param("productCode") String productCode,
                                                           @Param("inactiveStatus") UploadStatus inactiveStatus);
 
+    @Query("""
+            SELECT u
+            FROM UploadFileData u
+            WHERE u.uploadFile.status <> :inactiveStatus
+                AND TRIM(LOWER(u.listId)) = TRIM(LOWER(:listId))
+                AND TRIM(u.mobileNumber) = :mobileNumber
+            ORDER BY u.uploadFile.uploadedAt DESC, u.uploadFile.id DESC, u.id DESC
+            """)
+    List<UploadFileData> findLatestActiveByListIdAndMobileNumber(@Param("listId") String listId,
+                                                                  @Param("mobileNumber") String mobileNumber,
+                                                                  @Param("inactiveStatus") UploadStatus inactiveStatus,
+                                                                  Pageable pageable);
+
     Long countByUploadFile_StatusNot(UploadStatus status);
 
     @Query("""
             SELECT new com.tvscollections.backend.dto.ProductCountDto(
-                u.product.code,
-                u.product.name,
+                u.productId.code,
+                u.productId.name,
                 COUNT(u)
             )
             FROM UploadFileData u
             WHERE u.uploadFile.status <> :inactiveStatus
-            GROUP BY u.product.code, u.product.name
+            GROUP BY u.productId.code, u.productId.name
             ORDER BY COUNT(u) DESC
             """)
     List<ProductCountDto> countLeadsByProduct(@Param("inactiveStatus") UploadStatus inactiveStatus);

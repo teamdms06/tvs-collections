@@ -14,6 +14,7 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
+import java.time.LocalDate;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -96,6 +97,83 @@ public class DialerProxyService {
         }
 
         return statuses;
+    }
+
+    public String getAgentStatsExport(LocalDate startDate, LocalDate endDate, String agentUser) {
+        if (startDate == null || endDate == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Start and end dates are required");
+        }
+        if (endDate.isBefore(startDate)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "End date must be on or after start date");
+        }
+        if (StringUtils.hasText(agentUser) && !agentUser.trim().matches("[A-Za-z0-9_.-]{1,64}")) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Agent user is invalid");
+        }
+
+        UriComponentsBuilder builder = UriComponentsBuilder.newInstance()
+                .scheme("http")
+                .host(host)
+                .path("/vicidial/non_agent_api.php")
+                .queryParam("source", "test")
+                .queryParam("user", user)
+                .queryParam("pass", password)
+                .queryParam("function", "agent_stats_export")
+                .queryParam("time_format", "M")
+                .queryParam("stage", "pipe")
+                .queryParam("datetime_start", startDate + " 00:00:00")
+                .queryParam("datetime_end", endDate + " 23:59:59")
+                .queryParam("header", "YES");
+
+        if (StringUtils.hasText(agentUser)) {
+            builder.queryParam("agent_user", agentUser.trim());
+        }
+
+        return fetch(builder.build().encode().toUri());
+    }
+
+    public String getAgentStatsExport(LocalDate startDate, LocalDate endDate, List<String> agentUsers) {
+        if (agentUsers == null || agentUsers.isEmpty()) {
+            return getAgentStatsExport(startDate, endDate, (String) null);
+        }
+
+        List<String> normalizedAgentUsers = agentUsers.stream()
+                .filter(StringUtils::hasText)
+                .map(String::trim)
+                .filter(agentUser -> agentUser.matches("[A-Za-z0-9_.-]{1,64}"))
+                .collect(Collectors.collectingAndThen(
+                        Collectors.toCollection(LinkedHashSet::new),
+                        List::copyOf
+                ));
+
+        if (normalizedAgentUsers.isEmpty()) {
+            return getAgentStatsExport(startDate, endDate, (String) null);
+        }
+
+        StringBuilder mergedExport = new StringBuilder();
+        boolean hasHeader = false;
+
+        for (String normalizedAgentUser : normalizedAgentUsers) {
+            String exportText = getAgentStatsExport(startDate, endDate, normalizedAgentUser);
+            for (String line : exportText.split("\\R")) {
+                String trimmedLine = line.trim();
+
+                if (trimmedLine.isEmpty()) {
+                    continue;
+                }
+
+                boolean isHeader = trimmedLine.toLowerCase().startsWith("user|full_name|");
+                if (isHeader) {
+                    if (hasHeader) {
+                        continue;
+                    }
+                    hasHeader = true;
+                }
+
+                mergedExport.append(trimmedLine).append(System.lineSeparator());
+            }
+        }
+
+        return mergedExport.toString();
     }
 
     public String performAgentAction(String agentUser, DialerActionRequestDto request) {

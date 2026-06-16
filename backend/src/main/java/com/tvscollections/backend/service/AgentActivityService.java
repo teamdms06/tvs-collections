@@ -2,9 +2,11 @@ package com.tvscollections.backend.service;
 
 import com.tvscollections.backend.dto.AgentActivityPunchDto;
 import com.tvscollections.backend.dto.AgentActivitySummaryDto;
+import com.tvscollections.backend.dto.ProductSummaryDto;
 import com.tvscollections.backend.model.AgentActivitySession;
 import com.tvscollections.backend.model.User;
 import com.tvscollections.backend.repository.AgentActivitySessionRepository;
+import com.tvscollections.backend.repository.UserRepository;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -20,11 +22,17 @@ import java.util.Map;
 @Service
 public class AgentActivityService {
     private final AgentActivitySessionRepository activitySessionRepository;
+    private final UserRepository userRepository;
+    private final ProductAccessService productAccessService;
     private final Duration idleThreshold;
 
     public AgentActivityService(AgentActivitySessionRepository activitySessionRepository,
+                                UserRepository userRepository,
+                                ProductAccessService productAccessService,
                                 @Value("${agent-activity.idle-threshold-ms:300000}") long idleThresholdMs) {
         this.activitySessionRepository = activitySessionRepository;
+        this.userRepository = userRepository;
+        this.productAccessService = productAccessService;
         this.idleThreshold = Duration.ofMillis(idleThresholdMs);
     }
 
@@ -181,11 +189,15 @@ public class AgentActivityService {
         long spanMinutes = firstLoginAt == null || spanEnd == null
                 ? 0
                 : Math.max(0, Duration.between(firstLoginAt, spanEnd).toMinutes());
+        List<ProductSummaryDto> products = getProducts(user);
 
         return new AgentActivitySummaryDto(
                 user == null ? null : user.id,
                 user == null ? null : user.name,
                 user == null ? null : user.username,
+                getProductCodes(products),
+                getProductCodes(products),
+                getProductNames(products),
                 activityDate,
                 firstLoginAt,
                 lastLogoutAt,
@@ -200,10 +212,15 @@ public class AgentActivityService {
     }
 
     private AgentActivitySummaryDto emptySummary(User user, LocalDate activityDate) {
+        List<ProductSummaryDto> products = getProducts(user);
+
         return new AgentActivitySummaryDto(
                 user == null ? null : user.id,
                 user == null ? null : user.name,
                 user == null ? null : user.username,
+                getProductCodes(products),
+                getProductCodes(products),
+                getProductNames(products),
                 activityDate,
                 null,
                 null,
@@ -215,5 +232,26 @@ public class AgentActivityService {
                 0,
                 List.of()
         );
+    }
+
+    private List<ProductSummaryDto> getProducts(User user) {
+        if (user == null || user.id == null) {
+            return List.of();
+        }
+
+        User userWithRoles = userRepository.findByIdWithRoles(user.id).orElse(user);
+        return productAccessService.getAccessibleProducts(userWithRoles);
+    }
+
+    private List<String> getProductCodes(List<ProductSummaryDto> products) {
+        return products.stream()
+                .map(product -> product.code)
+                .toList();
+    }
+
+    private List<String> getProductNames(List<ProductSummaryDto> products) {
+        return products.stream()
+                .map(product -> product.name)
+                .toList();
     }
 }

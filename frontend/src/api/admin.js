@@ -80,6 +80,26 @@ export async function getDialerAgentStatuses(agentUsers) {
   return parseResponse(response);
 }
 
+export async function getDialerAgentStats(startDate, endDate, agentUser = "") {
+  const params = new URLSearchParams({
+    startDate,
+    endDate,
+  });
+
+  if (agentUser.trim()) {
+    params.set("agentUser", agentUser.trim());
+  }
+
+  const response = await fetch(
+    `${API_BASE_URL}/admin/dialer/agent-stats?${params.toString()}`,
+    {
+      headers: getAuthHeaders(),
+    },
+  );
+
+  return parseResponse(response);
+}
+
 export async function getUploadedFiles() {
   const response = await fetch(`${API_BASE_URL}/admin/uploads`, {
     headers: getAuthHeaders(),
@@ -123,6 +143,35 @@ export async function updateUploadedFileAccess(uploadId, isActive) {
     method: "POST",
     headers: getAuthHeaders(),
   });
+
+  return parseResponse(response);
+}
+
+export async function uploadNcRecordFile(file, productKey = "retail", options = {}) {
+  const formData = new FormData();
+  formData.append("file", file);
+  formData.append("productKey", productKey);
+  if (options.progressId) {
+    formData.append("progressId", options.progressId);
+  }
+
+  const token = localStorage.getItem("authToken");
+  const response = await fetch(`${API_BASE_URL}/admin/nc-records/upload`, {
+    method: "POST",
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+    body: formData,
+  });
+
+  return parseResponse(response);
+}
+
+export async function getUploadProgress(progressId) {
+  const response = await fetch(
+    `${API_BASE_URL}/uploads/progress/${encodeURIComponent(progressId)}`,
+    {
+      headers: getAuthHeaders(),
+    },
+  );
 
   return parseResponse(response);
 }

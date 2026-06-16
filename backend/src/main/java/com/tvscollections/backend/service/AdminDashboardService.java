@@ -125,6 +125,7 @@ public class AdminDashboardService {
                 uploadFileRepository.countByUploadedAtGreaterThanEqualAndUploadedAtLessThan(todayStart, tomorrowStart),
                 LocalDateTime.now(),
                 uploadFileDataRepository.countLeadsByProduct(UploadStatus.inactive),
+                feedbackRepository.countCallsByProductCreatedAtBetween(todayStart, tomorrowStart),
                 activeNonAdminUsers,
                 agentActivityService.getTodaySummaries(),
                 uploadFileRepository.findRecentUploads(PageRequest.of(0, 5))
@@ -320,7 +321,7 @@ public class AdminDashboardService {
         row.createCell(column++).setCellValue(textValue(leadText(lead, "region")));
         row.createCell(column++).setCellValue(textValue(leadText(lead, "zone")));
         row.createCell(column++).setCellValue(textValue(leadText(lead, "language")));
-        row.createCell(column++).setCellValue(textValue(lead == null || lead.product == null ? null : lead.product.name));
+        row.createCell(column++).setCellValue(textValue(lead == null || lead.product == null ? null : lead.product));
         row.createCell(column++).setCellValue(textValue(leadText(lead, "model")));
         row.createCell(column++).setCellValue(numberValue(leadNumber(lead, "emi")));
         row.createCell(column++).setCellValue(numberValue(leadNumber(lead, "askable")));

@@ -8,6 +8,9 @@ public class AgentActivitySummaryDto {
     public Long userId;
     public String name;
     public String username;
+    public List<String> accessProducts;
+    public List<String> productCodes;
+    public List<String> productNames;
     public LocalDate activityDate;
     public LocalDateTime firstLoginAt;
     public LocalDateTime lastLogoutAt;
@@ -22,6 +25,9 @@ public class AgentActivitySummaryDto {
     public AgentActivitySummaryDto(Long userId,
                                    String name,
                                    String username,
+                                   List<String> accessProducts,
+                                   List<String> productCodes,
+                                   List<String> productNames,
                                    LocalDate activityDate,
                                    LocalDateTime firstLoginAt,
                                    LocalDateTime lastLogoutAt,
@@ -35,6 +41,9 @@ public class AgentActivitySummaryDto {
         this.userId = userId;
         this.name = name;
         this.username = username;
+        this.accessProducts = accessProducts;
+        this.productCodes = productCodes;
+        this.productNames = productNames;
         this.activityDate = activityDate;
         this.firstLoginAt = firstLoginAt;
         this.lastLogoutAt = lastLogoutAt;

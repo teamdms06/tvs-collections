@@ -32,6 +32,28 @@ public class DatabaseSchemaConfig {
         );
 
         createAgentActivitySessionsTableIfMissing();
+        createDraftLeadsTableIfMissing();
+
+        addColumnIfMissing(
+                "draft_leads",
+                "user_id",
+                "BIGINT NULL"
+        );
+        addColumnIfMissing(
+                "draft_leads",
+                "lead_id",
+                "BIGINT NULL"
+        );
+        addColumnIfMissing(
+                "draft_leads",
+                "product_key",
+                "VARCHAR(50) NULL"
+        );
+        addColumnIfMissing(
+                "draft_leads",
+                "updated_at",
+                "TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP"
+        );
 
         createIndexIfMissing(
                 "upload_file_data",
@@ -98,6 +120,16 @@ public class DatabaseSchemaConfig {
                 "idx_agent_activity_logout",
                 "logout_at"
         );
+        createIndexIfMissing(
+                "draft_leads",
+                "idx_draft_leads_user_product_updated",
+                "user_id, product_key, updated_at"
+        );
+        createIndexIfMissing(
+                "draft_leads",
+                "idx_draft_leads_user_lead",
+                "user_id, lead_id"
+        );
     }
 
     private void createAgentActivitySessionsTableIfMissing() {
@@ -118,6 +150,26 @@ public class DatabaseSchemaConfig {
                     """);
         } catch (Exception error) {
             System.out.println("Agent activity schema check skipped: " + error.getMessage());
+        }
+    }
+
+    private void createDraftLeadsTableIfMissing() {
+        try {
+            jdbcTemplate.execute("""
+                    CREATE TABLE IF NOT EXISTS draft_leads (
+                        id BIGINT NOT NULL AUTO_INCREMENT,
+                        user_id BIGINT NULL,
+                        lead_id BIGINT NULL,
+                        product_key VARCHAR(50) NULL,
+                        agreement_number VARCHAR(100) NOT NULL,
+                        form_data_json TEXT NOT NULL,
+                        created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                        updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                        PRIMARY KEY (id)
+                    )
+                    """);
+        } catch (Exception error) {
+            System.out.println("Draft leads schema check skipped: " + error.getMessage());
         }
     }
 

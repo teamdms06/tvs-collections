@@ -5,6 +5,7 @@ import {
   saveConsumerFeedback,
   searchConsumerLeads,
 } from "../api/leads";
+import { saveDraft, listDrafts, deleteDraft } from "../api/drafts";
 import { getMyDialerAgentStatus } from "../api/dialer";
 import { API_BASE_URL } from "../api/config";
 
@@ -101,15 +102,42 @@ const FEEDBACK_FIELDS_BY_SUB_DISPOSITION = {
   ],
   LMG: [...callBackFields, "alternateMobile", "remark"],
   CD: ["nonPaymentReason", "alternateMobile", "remark"],
-  RTP: [...positiveSupportFields, ...refusalFields, "alternateMobile", "remark"],
+  RTP: [
+    ...positiveSupportFields,
+    ...refusalFields,
+    "alternateMobile",
+    "remark",
+  ],
   WRNG: ["nonPaymentReason", "alternateMobile", "remark"],
   LC: ["nonPaymentReason", "alternateMobile", "remark"],
 };
 
 const REQUIRED_FIELDS_BY_SUB_DISPOSITION = {
-  OCP: ["amount", "actionDate", "paymentMode", "sourceIncome", "receiptNo", "nonPaymentReason", "remark"],
-  BPTP: ["amount", "actionDate", "paymentMode", "sourceIncome", "nonPaymentReason", "remark"],
-  ONKT: ["amount", "actionDate", "paymentMode", "sourceIncome", "nonPaymentReason", "remark"],
+  OCP: [
+    "amount",
+    "actionDate",
+    "paymentMode",
+    "sourceIncome",
+    "receiptNo",
+    "nonPaymentReason",
+    "remark",
+  ],
+  BPTP: [
+    "amount",
+    "actionDate",
+    "paymentMode",
+    "sourceIncome",
+    "nonPaymentReason",
+    "remark",
+  ],
+  ONKT: [
+    "amount",
+    "actionDate",
+    "paymentMode",
+    "sourceIncome",
+    "nonPaymentReason",
+    "remark",
+  ],
   Pickup: [
     "amount",
     "actionDate",
@@ -120,12 +148,40 @@ const REQUIRED_FIELDS_BY_SUB_DISPOSITION = {
     "nonPaymentReason",
     "remark",
   ],
-  PTP: ["amount", "actionDate", "paymentMode", "sourceIncome", "nonPaymentReason", "remark"],
-  LPTP: ["amount", "actionDate", "paymentMode", "sourceIncome", "nonPaymentReason", "remark"],
-  AP: ["amount", "actionDate", "paymentMode", "sourceIncome", "receiptNo", "nonPaymentReason", "remark"],
+  PTP: [
+    "amount",
+    "actionDate",
+    "paymentMode",
+    "sourceIncome",
+    "nonPaymentReason",
+    "remark",
+  ],
+  LPTP: [
+    "amount",
+    "actionDate",
+    "paymentMode",
+    "sourceIncome",
+    "nonPaymentReason",
+    "remark",
+  ],
+  AP: [
+    "amount",
+    "actionDate",
+    "paymentMode",
+    "sourceIncome",
+    "receiptNo",
+    "nonPaymentReason",
+    "remark",
+  ],
   APCB: ["amount", "actionDate", "sourceIncome", "nonPaymentReason", "remark"],
   CLBK: ["callBackDate", "callBackTime", "remark"],
-  CLBK_P: ["sourceIncome", "callBackDate", "callBackTime", "nonPaymentReason", "remark"],
+  CLBK_P: [
+    "sourceIncome",
+    "callBackDate",
+    "callBackTime",
+    "nonPaymentReason",
+    "remark",
+  ],
   LMG: ["remark"],
   CD: ["nonPaymentReason", "remark"],
   RTP: ["sourceIncome", "nonPaymentReason", "bouncingReason", "remark"],
@@ -135,9 +191,11 @@ const REQUIRED_FIELDS_BY_SUB_DISPOSITION = {
 
 const alwaysSubmittedFields = ["disposition", "subDisposition"];
 const alwaysVisibleFeedbackFields = [];
-const WEBHOOK_SOCKET_URL = import.meta.env.VITE_WEBHOOK_SOCKET_URL || "http://192.168.114.241:3001";
+const WEBHOOK_SOCKET_URL =
+  import.meta.env.VITE_WEBHOOK_SOCKET_URL || "http://192.168.114.241:3001";
 const AGENT_CALL_STATUS_ATTEMPTS = 8;
 const AGENT_CALL_STATUS_RETRY_MS = 1000;
+const AGENT_LIVE_STATUS_REFRESH_MS = 2000;
 const DIALER_USER_LOOKUP_ATTEMPTS = 3;
 const ASSIGNED_CALL_SEARCH_DELAY_MS = 3000;
 const DIALER_SCRIPT_ID = "vd-dialer-script";
@@ -167,11 +225,15 @@ function loadSocketIoClient(serverUrl) {
     return Promise.resolve(window.io);
   }
 
-  const existingScript = document.querySelector(`script[data-socket-io-client="${serverUrl}"]`);
+  const existingScript = document.querySelector(
+    `script[data-socket-io-client="${serverUrl}"]`,
+  );
 
   if (existingScript) {
     return new Promise((resolve, reject) => {
-      existingScript.addEventListener("load", () => resolve(window.io), { once: true });
+      existingScript.addEventListener("load", () => resolve(window.io), {
+        once: true,
+      });
       existingScript.addEventListener("error", reject, { once: true });
     });
   }
@@ -198,7 +260,12 @@ function parseDialerAgentStatusCsv(text) {
     return null;
   }
 
-  const headerRow = rows[0].map((header) => header.toLowerCase());
+  const headerRow = rows[0].map((header) =>
+    header
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "_")
+      .replace(/^_+|_+$/g, ""),
+  );
   const valueRow = headerRow.includes("status") ? rows[1] : rows[0];
 
   if (!valueRow) {
@@ -227,6 +294,108 @@ function parseDialerAgentStatusCsv(text) {
     detail[fieldName] = valueRow[index] || "";
     return detail;
   }, {});
+}
+
+function isWrapDeadSubStatus(subStatus) {
+  const normalizedSubStatus = String(subStatus || "")
+    .trim()
+    .toUpperCase();
+
+  return (
+    normalizedSubStatus === "DEAD" ||
+    normalizedSubStatus === "WRAP" ||
+    normalizedSubStatus === "WRAPUP" ||
+    normalizedSubStatus === "WRAP_UP"
+  );
+}
+
+function isDispoSubStatus(subStatus) {
+  const normalizedSubStatus = String(subStatus || "")
+    .trim()
+    .toUpperCase();
+
+  return (
+    normalizedSubStatus === "DISPO" ||
+    normalizedSubStatus === "DISPOSITION" ||
+    normalizedSubStatus === "DISPOSITIONING"
+  );
+}
+
+function getDialerDetailSubStatus(detail) {
+  return String(
+    detail?.real_time_sub_status ||
+      detail?.user_sub_status ||
+      detail?.sub_status ||
+      "",
+  )
+    .trim()
+    .toUpperCase();
+}
+
+function getAgentCallDisplayStatus(detail) {
+  const subStatus = getDialerDetailSubStatus(detail);
+
+  if (isWrapDeadSubStatus(subStatus)) {
+    return "IN DEAD";
+  }
+
+  if (isDispoSubStatus(subStatus)) {
+    return "IN DISPO";
+  }
+
+  const status = String(detail?.status || "")
+    .trim()
+    .toUpperCase();
+  return status === "INCALL" ? "IN CALL" : status;
+}
+
+function isAgentCallLifecycleStatus(status) {
+  return status === "IN CALL" || status === "IN DEAD" || status === "IN DISPO";
+}
+
+function getAgentCallTimerKey(detail, displayStatus) {
+  return [
+    displayStatus,
+    detail?.session_id || "",
+    detail?.lead_id || "",
+    detail?.vendor_lead_code || "",
+  ].join("|");
+}
+
+function formatCallDuration(totalSeconds) {
+  const safeSeconds = Math.max(0, Number(totalSeconds || 0));
+  const hours = Math.floor(safeSeconds / 3600);
+  const minutes = Math.floor((safeSeconds % 3600) / 60);
+  const seconds = safeSeconds % 60;
+
+  if (hours > 0) {
+    return `${hours}:${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+  }
+
+  return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+}
+
+function AgentLiveCallPanel({ detail, elapsedSeconds, visible }) {
+  const displayStatus = getAgentCallDisplayStatus(detail);
+  const statusClass = displayStatus.toLowerCase().replace(/\s+/g, "-");
+
+  return (
+    <aside
+      className={[
+        "agent-live-call-panel",
+        visible ? "agent-live-call-panel--open" : "",
+        `agent-live-call-panel--${statusClass || "idle"}`,
+      ]
+        .filter(Boolean)
+        .join(" ")}
+      aria-hidden={!visible}
+      aria-live="polite"
+    >
+      <span aria-hidden="true" />
+      <strong>{displayStatus || "READY"}</strong>
+      <b>{formatCallDuration(elapsedSeconds)}</b>
+    </aside>
+  );
 }
 
 function cleanAlternateMobileValue(value) {
@@ -355,10 +524,12 @@ function getMissingRequiredFields(config, feedbackValues, requiredFieldNames) {
     .map((field) => field.label);
 }
 
-function getMissingActiveAnswerFields(config, feedbackValues, activeFieldNames) {
-  const answerFields = [
-    ...(config.editableFields || []),
-  ];
+function getMissingActiveAnswerFields(
+  config,
+  feedbackValues,
+  activeFieldNames,
+) {
+  const answerFields = [...(config.editableFields || [])];
 
   return answerFields
     .filter((field) => field.name === "alternateMobile")
@@ -402,8 +573,14 @@ function getValidationErrors(
     errors.push("Paid to whom (Contact no) must be 10 digits");
   }
 
-  if (alternateMobile && alternateMobile !== "0" && !/^\d{10}$/.test(alternateMobile)) {
-    errors.push("Alternate Mobile Number must be 10 digits, or enter 0 when not provided");
+  if (
+    alternateMobile &&
+    alternateMobile !== "0" &&
+    !/^\d{10}$/.test(alternateMobile)
+  ) {
+    errors.push(
+      "Alternate Mobile Number must be 10 digits, or enter 0 when not provided",
+    );
   }
 
   if (uid && !/^[A-Za-z]\d{19}$/.test(uid)) {
@@ -513,10 +690,16 @@ function UserDashboard({ dashboard, fallbackName, loading, error }) {
           <p className="eyebrow">User analysis</p>
           <h2>{dashboard?.name || fallbackName || "My Dashboard"}</h2>
         </div>
-        <span>{dashboard?.generatedAt ? `Updated ${formatDateTime(dashboard.generatedAt)}` : "Live"}</span>
+        <span>
+          {dashboard?.generatedAt
+            ? `Updated ${formatDateTime(dashboard.generatedAt)}`
+            : "Live"}
+        </span>
       </div>
       {error && <p className="notice notice--error">{error}</p>}
-      {loading && !dashboard && <p className="notice">Loading your dashboard...</p>}
+      {loading && !dashboard && (
+        <p className="notice">Loading your dashboard...</p>
+      )}
       <div className="user-dashboard__grid">
         {stats.map((stat) => (
           <article className="user-stat-card" key={stat.label}>
@@ -536,10 +719,15 @@ function UserDashboard({ dashboard, fallbackName, loading, error }) {
             <p>No punches recorded yet.</p>
           )}
           {(dashboard?.activity?.punches || []).map((punch, index) => (
-            <div className="activity-punch-row" key={`${punch.loginAt}-${index}`}>
+            <div
+              className="activity-punch-row"
+              key={`${punch.loginAt}-${index}`}
+            >
               <span>{index + 1}</span>
               <strong>{formatDateTime(punch.loginAt)}</strong>
-              <strong>{punch.logoutAt ? formatDateTime(punch.logoutAt) : "Active"}</strong>
+              <strong>
+                {punch.logoutAt ? formatDateTime(punch.logoutAt) : "Active"}
+              </strong>
               <small>{formatWorkingMinutes(punch.workMinutes)} work</small>
               <small>{formatWorkingMinutes(punch.idleMinutes)} idle</small>
             </div>
@@ -745,17 +933,38 @@ export default function LeadFeedbackPage({ config, onLogout, user }) {
   const [loading, setLoading] = useState(false);
   const [redirectingAfterSubmit, setRedirectingAfterSubmit] = useState(false);
   const [assignedUidReadOnly, setAssignedUidReadOnly] = useState(false);
-  const [pendingAssignedCallDetail, setPendingAssignedCallDetail] = useState(null);
+  const [pendingAssignedCallDetail, setPendingAssignedCallDetail] =
+    useState(null);
   const [assignedCallLoader, setAssignedCallLoader] = useState(null);
   const [notice, setNotice] = useState(null);
   const [dashboard, setDashboard] = useState(null);
   const [dashboardLoading, setDashboardLoading] = useState(true);
   const [dashboardError, setDashboardError] = useState("");
+  const [agentCallDetail, setAgentCallDetail] = useState(null);
+  const [agentCallStartedAt, setAgentCallStartedAt] = useState(null);
+  const [agentCallNow, setAgentCallNow] = useState(0);
+  const [drafts, setDrafts] = useState([]);
+  const [draftsLoading, setDraftsLoading] = useState(false);
+  const [showDraftsPanel, setShowDraftsPanel] = useState(false);
+  const [feedbackDirty, setFeedbackDirty] = useState(false);
+  const [activeDraftId, setActiveDraftId] = useState(null);
   const submitRedirectTimerRef = useRef(null);
+  const agentCallTimerKeyRef = useRef("");
+  const activeLeadRef = useRef(null);
+  const feedbackDirtyRef = useRef(false);
+  const feedbackValuesRef = useRef(feedbackValues);
+  const activeDraftIdRef = useRef(null);
 
   const notify = (message, type = "info") => {
     setNotice({ message, type });
   };
+
+  useEffect(() => {
+    activeLeadRef.current = activeLead;
+    feedbackDirtyRef.current = feedbackDirty;
+    feedbackValuesRef.current = feedbackValues;
+    activeDraftIdRef.current = activeDraftId;
+  }, [activeDraftId, activeLead, feedbackDirty, feedbackValues]);
 
   useEffect(() => {
     if (!notice) {
@@ -777,11 +986,168 @@ export default function LeadFeedbackPage({ config, onLogout, user }) {
     }
   };
 
+  const loadDrafts = useCallback(async () => {
+    setDraftsLoading(true);
+    try {
+      const data = await listDrafts(config.key);
+      setDrafts(Array.isArray(data) ? data : []);
+    } catch (error) {
+      console.warn("Failed to load drafts:", error);
+      setDrafts([]);
+    } finally {
+      setDraftsLoading(false);
+    }
+  }, [config.key]);
+
+  const handleSaveDraft = async () => {
+    if (!activeLead) {
+      notify("Open a record before saving a draft.", "warning");
+      return;
+    }
+
+    const agreementNumber = activeLead.agreementNumber;
+    if (!agreementNumber) {
+      notify("Cannot save draft: missing agreement number.", "warning");
+      return;
+    }
+
+    try {
+      const savedDraft = await saveDraft({
+        agreementNumber,
+        leadId: activeLead.id,
+        productKey: config.key,
+        formDataJson: JSON.stringify(feedbackValues),
+      });
+      setFeedbackDirty(false);
+      setActiveDraftId(savedDraft?.id || null);
+      notify("Draft saved successfully.", "success");
+      loadDrafts();
+    } catch (error) {
+      notify(error.message || "Failed to save draft.", "error");
+    }
+  };
+
+  const handleLoadDraft = async (draft) => {
+    try {
+      const parsed = JSON.parse(draft.formDataJson);
+
+      if (draft.leadId) {
+        await openLead(draft.leadId, {
+          draftId: draft.id,
+          draftValues: parsed,
+        });
+      } else if (draft.agreementNumber) {
+        const results = await searchConsumerLeads(draft.agreementNumber, config.key);
+        const normalizedResults = results.map(normalizeLead);
+        if (normalizedResults.length === 0) {
+          notify("Could not find the lead for this draft.", "error");
+          return;
+        }
+        await openLead(normalizedResults[0].id, {
+          draftId: draft.id,
+          draftValues: parsed,
+        });
+      } else {
+        setFeedbackValues((current) => ({
+          ...current,
+          ...parsed,
+        }));
+        setFeedbackDirty(false);
+        setActiveDraftId(draft.id);
+      }
+
+      setShowDraftsPanel(false);
+      notify("Draft loaded into form.", "success");
+    } catch {
+      notify("Failed to load draft data.", "error");
+    }
+  };
+
+  const handleDeleteDraft = async (draftId) => {
+    try {
+      await deleteDraft(draftId);
+      setDrafts((current) => current.filter((d) => d.id !== draftId));
+      if (activeDraftId === draftId) {
+        setActiveDraftId(null);
+        setFeedbackDirty(false);
+      }
+      notify("Draft deleted.", "success");
+    } catch (error) {
+      notify(error.message || "Failed to delete draft.", "error");
+    }
+  };
+
+  const toggleDraftsPanel = () => {
+    const willOpen = !showDraftsPanel;
+    setShowDraftsPanel(willOpen);
+    if (willOpen) {
+      loadDrafts();
+    }
+  };
+
   useEffect(() => {
     const timeout = window.setTimeout(loadDashboard, 0);
     const interval = window.setInterval(loadDashboard, 30000);
     return () => {
       window.clearTimeout(timeout);
+      window.clearInterval(interval);
+    };
+  }, []);
+
+  const refreshAgentLiveStatus = useCallback(async () => {
+    if (!String(user.dialerUser || user.username || "").trim()) {
+      return;
+    }
+
+    try {
+      const detail = parseDialerAgentStatusCsv(await getMyDialerAgentStatus());
+      const displayStatus = getAgentCallDisplayStatus(detail);
+      const isLifecycleStatus = isAgentCallLifecycleStatus(displayStatus);
+      const nextTimerKey = isLifecycleStatus
+        ? getAgentCallTimerKey(detail, displayStatus)
+        : "";
+
+      setAgentCallDetail(detail);
+      setAgentCallNow(Date.now());
+
+      if (!isLifecycleStatus) {
+        agentCallTimerKeyRef.current = "";
+        setAgentCallStartedAt(null);
+        return;
+      }
+
+      if (agentCallTimerKeyRef.current !== nextTimerKey) {
+        agentCallTimerKeyRef.current = nextTimerKey;
+        setAgentCallStartedAt(Date.now());
+      }
+    } catch (error) {
+      console.warn(
+        "[Agent Dialer Status] Could not refresh live call status.",
+        error.message,
+      );
+    }
+  }, [user.dialerUser, user.username]);
+
+  useEffect(() => {
+    const timeout = window.setTimeout(refreshAgentLiveStatus, 0);
+    const interval = window.setInterval(
+      refreshAgentLiveStatus,
+      AGENT_LIVE_STATUS_REFRESH_MS,
+    );
+
+    return () => {
+      window.clearTimeout(timeout);
+      window.clearInterval(interval);
+    };
+  }, [refreshAgentLiveStatus]);
+
+  useEffect(() => {
+    const interval = window.setInterval(
+      () => setAgentCallNow(Date.now()),
+      1000,
+    );
+
+    return () => {
       window.clearInterval(interval);
     };
   }, []);
@@ -805,7 +1171,10 @@ export default function LeadFeedbackPage({ config, onLogout, user }) {
     loadSocketIoClient(WEBHOOK_SOCKET_URL)
       .then(appendDialerScript)
       .catch((error) => {
-        console.warn("[Campaign Webhook] Socket.IO client could not be loaded before dialer UI:", error);
+        console.warn(
+          "[Campaign Webhook] Socket.IO client could not be loaded before dialer UI:",
+          error,
+        );
         appendDialerScript();
       });
 
@@ -860,9 +1229,13 @@ export default function LeadFeedbackPage({ config, onLogout, user }) {
       }
 
       try {
-        const agentStatus = parseDialerAgentStatusCsv(await getMyDialerAgentStatus());
+        const agentStatus = parseDialerAgentStatusCsv(
+          await getMyDialerAgentStatus(),
+        );
         const webhookMobileNumber = getComparablePhoneValue(callData?.caller);
-        const agentMobileNumber = getComparablePhoneValue(agentStatus?.phone_number);
+        const agentMobileNumber = getComparablePhoneValue(
+          agentStatus?.phone_number,
+        );
         const isMatchingAssignedCall =
           agentStatus?.status?.toUpperCase() === "INCALL" &&
           webhookMobileNumber &&
@@ -882,6 +1255,7 @@ export default function LeadFeedbackPage({ config, onLogout, user }) {
             callerId: agentStatus.callerid,
             vendorLeadCode: agentStatus.vendor_lead_code,
           });
+          refreshAgentLiveStatus();
           return;
         }
 
@@ -913,7 +1287,10 @@ export default function LeadFeedbackPage({ config, onLogout, user }) {
             ),
           );
         } else {
-          console.warn("[Campaign Webhook] Could not fetch assigned call detail.", error.message);
+          console.warn(
+            "[Campaign Webhook] Could not fetch assigned call detail.",
+            error.message,
+          );
         }
       }
     };
@@ -932,11 +1309,17 @@ export default function LeadFeedbackPage({ config, onLogout, user }) {
           logAssignedCallDetail(callData);
         });
         socket.on("connect_error", (error) => {
-          console.warn("[Campaign Webhook] Agent listener connection failed:", error.message);
+          console.warn(
+            "[Campaign Webhook] Agent listener connection failed:",
+            error.message,
+          );
         });
       })
       .catch((error) => {
-        console.warn("[Campaign Webhook] Socket.IO client could not be loaded:", error);
+        console.warn(
+          "[Campaign Webhook] Socket.IO client could not be loaded:",
+          error,
+        );
       });
 
     return () => {
@@ -947,7 +1330,7 @@ export default function LeadFeedbackPage({ config, onLogout, user }) {
         socket.disconnect();
       }
     };
-  }, [user.dialerUser, user.name, user.username]);
+  }, [refreshAgentLiveStatus, user.dialerUser, user.name, user.username]);
 
   const selectedGroup = useMemo(
     () =>
@@ -995,6 +1378,10 @@ export default function LeadFeedbackPage({ config, onLogout, user }) {
     setFeedbackValues(createInitialFeedback(config));
     setAssignedUidReadOnly(false);
     setNotice(null);
+    setFeedbackDirty(false);
+    setActiveDraftId(null);
+    setDrafts([]);
+    setShowDraftsPanel(false);
   };
 
   const updateSearchQuery = (value) => {
@@ -1038,9 +1425,13 @@ export default function LeadFeedbackPage({ config, onLogout, user }) {
     if (event.key === "Backspace") {
       event.preventDefault();
       if (selectionStart !== selectionEnd) {
-        updateSearchQuery(`${searchQuery.slice(0, selectionStart)}${searchQuery.slice(selectionEnd)}`);
+        updateSearchQuery(
+          `${searchQuery.slice(0, selectionStart)}${searchQuery.slice(selectionEnd)}`,
+        );
       } else {
-        updateSearchQuery(`${searchQuery.slice(0, Math.max(0, selectionStart - 1))}${searchQuery.slice(selectionEnd)}`);
+        updateSearchQuery(
+          `${searchQuery.slice(0, Math.max(0, selectionStart - 1))}${searchQuery.slice(selectionEnd)}`,
+        );
       }
       return;
     }
@@ -1048,9 +1439,13 @@ export default function LeadFeedbackPage({ config, onLogout, user }) {
     if (event.key === "Delete") {
       event.preventDefault();
       if (selectionStart !== selectionEnd) {
-        updateSearchQuery(`${searchQuery.slice(0, selectionStart)}${searchQuery.slice(selectionEnd)}`);
+        updateSearchQuery(
+          `${searchQuery.slice(0, selectionStart)}${searchQuery.slice(selectionEnd)}`,
+        );
       } else {
-        updateSearchQuery(`${searchQuery.slice(0, selectionStart)}${searchQuery.slice(selectionEnd + 1)}`);
+        updateSearchQuery(
+          `${searchQuery.slice(0, selectionStart)}${searchQuery.slice(selectionEnd + 1)}`,
+        );
       }
     }
   };
@@ -1094,35 +1489,44 @@ export default function LeadFeedbackPage({ config, onLogout, user }) {
     }
   };
 
-  const openLead = useCallback(async (leadId, options = {}) => {
-    setLoading(true);
-    setNotice(null);
+  const openLead = useCallback(
+    async (leadId, options = {}) => {
+      setLoading(true);
+      setNotice(null);
 
-    try {
-      const uidOverride = cleanUidValue(options.uid);
-      const fullLead = normalizeLead(
-        await getConsumerLeadById(leadId, config.key),
-      );
-      const bestDispoGroup = config.dispositionGroups.find((group) =>
-        group.options.includes(fullLead.bestDispoInternal),
-      );
-      setActiveLead(fullLead);
-      setPreviewLead(null);
-      setSearchResults([]);
-      setFeedbackValues({
-        ...createInitialFeedback(config, fullLead),
-        ...(uidOverride ? { uid: uidOverride } : {}),
-        status: bestDispoGroup?.name || "",
-        disposition: bestDispoGroup?.name || "",
-        subDisposition: cleanFeedbackValue(fullLead.bestDispoInternal),
-      });
-      setAssignedUidReadOnly(Boolean(uidOverride));
-    } catch (error) {
-      notify(error.message, "error");
-    } finally {
-      setLoading(false);
-    }
-  }, [config]);
+      try {
+        const uidOverride = cleanUidValue(options.uid);
+        const fullLead = normalizeLead(
+          await getConsumerLeadById(leadId, config.key),
+        );
+        const bestDispoGroup = config.dispositionGroups.find((group) =>
+          group.options.includes(fullLead.bestDispoInternal),
+        );
+        const nextFeedbackValues = {
+          ...createInitialFeedback(config, fullLead),
+          ...(uidOverride ? { uid: uidOverride } : {}),
+          ...(options.draftValues || {}),
+          status: bestDispoGroup?.name || "",
+          disposition: bestDispoGroup?.name || "",
+          subDisposition: cleanFeedbackValue(fullLead.bestDispoInternal),
+          ...(options.draftValues || {}),
+        };
+        setActiveLead(fullLead);
+        setPreviewLead(null);
+        setSearchResults([]);
+        setFeedbackValues(nextFeedbackValues);
+        setAssignedUidReadOnly(Boolean(uidOverride));
+        setFeedbackDirty(false);
+        setActiveDraftId(options.draftId || null);
+        loadDrafts();
+      } catch (error) {
+        notify(error.message, "error");
+      } finally {
+        setLoading(false);
+      }
+    },
+    [config, loadDrafts],
+  );
 
   useEffect(() => {
     if (!pendingAssignedCallDetail) {
@@ -1132,7 +1536,9 @@ export default function LeadFeedbackPage({ config, onLogout, user }) {
     let isCancelled = false;
 
     const openAssignedLead = async () => {
-      const vendorLeadCode = cleanFeedbackValue(pendingAssignedCallDetail.vendorLeadCode);
+      const vendorLeadCode = cleanFeedbackValue(
+        pendingAssignedCallDetail.vendorLeadCode,
+      );
       const callerId = cleanUidValue(pendingAssignedCallDetail.callerId);
 
       if (!vendorLeadCode) {
@@ -1154,6 +1560,26 @@ export default function LeadFeedbackPage({ config, onLogout, user }) {
           return;
         }
 
+        // Save the interrupted CRM form before replacing it with the next dialer lead.
+        const interruptedLead = activeLeadRef.current;
+        const interruptedFeedbackValues = feedbackValuesRef.current;
+
+        if (interruptedLead && feedbackDirtyRef.current) {
+          try {
+            const savedDraft = await saveDraft({
+              agreementNumber: interruptedLead.agreementNumber,
+              leadId: interruptedLead.id,
+              productKey: config.key,
+              formDataJson: JSON.stringify(interruptedFeedbackValues),
+            });
+            setActiveDraftId(savedDraft?.id || activeDraftIdRef.current);
+            setFeedbackDirty(false);
+            loadDrafts();
+          } catch (draftError) {
+            console.warn("Failed to save draft before auto-search:", draftError);
+          }
+        }
+
         const results = await searchConsumerLeads(vendorLeadCode, config.key);
         const normalizedResults = results.map(normalizeLead);
 
@@ -1165,7 +1591,10 @@ export default function LeadFeedbackPage({ config, onLogout, user }) {
         setSearchResults([]);
 
         if (normalizedResults.length === 0) {
-          notify(`No record found for vendor lead code ${vendorLeadCode}.`, "warning");
+          notify(
+            `No record found for vendor lead code ${vendorLeadCode}.`,
+            "warning",
+          );
           return;
         }
 
@@ -1188,7 +1617,7 @@ export default function LeadFeedbackPage({ config, onLogout, user }) {
     return () => {
       isCancelled = true;
     };
-  }, [config.key, openLead, pendingAssignedCallDetail]);
+  }, [config.key, loadDrafts, openLead, pendingAssignedCallDetail]);
 
   const onFeedbackChange = (name, value) => {
     if (name === "uid" && assignedUidReadOnly) {
@@ -1208,6 +1637,7 @@ export default function LeadFeedbackPage({ config, onLogout, user }) {
 
       return nextValues;
     });
+    setFeedbackDirty(true);
   };
 
   const saveFeedback = async () => {
@@ -1241,9 +1671,18 @@ export default function LeadFeedbackPage({ config, onLogout, user }) {
     const leadId = activeLead.id;
     try {
       await saveConsumerFeedback(leadId, feedbackRequest, config.key);
+      if (activeDraftId) {
+        await deleteDraft(activeDraftId);
+        setActiveDraftId(null);
+        loadDrafts();
+      }
+      setFeedbackDirty(false);
       loadDashboard();
       setRedirectingAfterSubmit(true);
-      notify("Feedback submitted successfully. Returning to dashboard...", "success");
+      notify(
+        "Feedback submitted successfully. Returning to dashboard...",
+        "success",
+      );
       submitRedirectTimerRef.current = window.setTimeout(() => {
         setActiveLead(null);
         setPreviewLead(null);
@@ -1252,6 +1691,8 @@ export default function LeadFeedbackPage({ config, onLogout, user }) {
         setSearchDisplayQuery("");
         setFeedbackValues(createInitialFeedback(config));
         setAssignedUidReadOnly(false);
+        setFeedbackDirty(false);
+        setActiveDraftId(null);
         setRedirectingAfterSubmit(false);
         submitRedirectTimerRef.current = null;
       }, 3000);
@@ -1263,9 +1704,23 @@ export default function LeadFeedbackPage({ config, onLogout, user }) {
     }
   };
 
+  const agentCallDisplayStatus = getAgentCallDisplayStatus(agentCallDetail);
+  const isAgentLiveCallVisible = isAgentCallLifecycleStatus(
+    agentCallDisplayStatus,
+  );
+  const agentCallElapsedSeconds =
+    isAgentLiveCallVisible && agentCallStartedAt
+      ? Math.floor((agentCallNow - agentCallStartedAt) / 1000)
+      : 0;
+
   return (
     <main className="workspace-shell app-workspace">
       <Toast notice={notice} onClose={() => setNotice(null)} />
+      <AgentLiveCallPanel
+        detail={agentCallDetail}
+        elapsedSeconds={agentCallElapsedSeconds}
+        visible={isAgentLiveCallVisible}
+      />
       {assignedCallLoader && (
         <div
           className="assigned-call-loader"
@@ -1274,13 +1729,62 @@ export default function LeadFeedbackPage({ config, onLogout, user }) {
           aria-label="Opening assigned call"
         >
           <div className="assigned-call-loader__panel">
-            <span className="assigned-call-loader__spinner" aria-hidden="true" />
+            <span
+              className="assigned-call-loader__spinner"
+              aria-hidden="true"
+            />
             <strong>Opening assigned call</strong>
             <p>
-              Searching lead{" "}
-              <span>{assignedCallLoader.vendorLeadCode}</span>
+              Searching lead <span>{assignedCallLoader.vendorLeadCode}</span>
             </p>
           </div>
+        </div>
+      )}
+      {showDraftsPanel && (
+        <div className="drafts-panel" role="dialog" aria-label="Saved drafts">
+          <div className="drafts-panel__header">
+            <h2>Missed / Drafted Leads</h2>
+            <button
+              className="icon-button"
+              onClick={() => setShowDraftsPanel(false)}
+              type="button"
+              aria-label="Close drafts panel"
+            >
+              x
+            </button>
+          </div>
+          {draftsLoading && <p className="notice">Loading drafts...</p>}
+          {!draftsLoading && drafts.length === 0 && (
+            <p className="notice">No missed or drafted leads for you.</p>
+          )}
+          {!draftsLoading && drafts.length > 0 && (
+            <div className="drafts-list">
+              {drafts.map((draft) => (
+                <div className="draft-card" key={draft.id}>
+                  <div className="draft-card__info">
+                    <strong>{draft.agreementNumber}</strong>
+                    <small>{formatDateTime(draft.updatedAt || draft.createdAt)}</small>
+                  </div>
+                  <div className="draft-card__actions">
+                    <button
+                      className="primary-action"
+                      onClick={() => handleLoadDraft(draft)}
+                      type="button"
+                    >
+                      Load
+                    </button>
+                    <button
+                      className="danger-action"
+                      onClick={() => handleDeleteDraft(draft.id)}
+                      type="button"
+                    >
+                      Delete
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
       <section className="app-shell app-shell--topbar">
@@ -1300,6 +1804,13 @@ export default function LeadFeedbackPage({ config, onLogout, user }) {
                 type="button"
               >
                 Dashboard
+              </button>
+              <button
+                className={showDraftsPanel ? "admin-menu-item admin-menu-item--active" : "admin-menu-item"}
+                onClick={toggleDraftsPanel}
+                type="button"
+              >
+                Drafts {drafts.length > 0 && `(${drafts.length})`}
               </button>
             </nav>
           </div>
@@ -1367,7 +1878,11 @@ export default function LeadFeedbackPage({ config, onLogout, user }) {
                     </strong>
                     <span>{result.agreementNumber}</span>
                     <span>{maskMobileNumber(result.mobileNumber)}</span>
-                    <span>{result.createdAt ? formatDateTime(result.createdAt) : "-"}</span>
+                    <span>
+                      {result.createdAt
+                        ? formatDateTime(result.createdAt)
+                        : "-"}
+                    </span>
                     <span
                       className={
                         feedbackTaken
@@ -1539,6 +2054,14 @@ export default function LeadFeedbackPage({ config, onLogout, user }) {
                   </form>
 
                   <div className="form-actions">
+                    <button
+                      className="secondary-action"
+                      disabled={loading || redirectingAfterSubmit}
+                      onClick={handleSaveDraft}
+                      type="button"
+                    >
+                      {loading ? "Saving..." : "Save Draft"}
+                    </button>
                     <button
                       className="primary-action"
                       disabled={loading || redirectingAfterSubmit}

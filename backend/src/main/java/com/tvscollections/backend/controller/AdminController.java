@@ -4,8 +4,10 @@ import com.tvscollections.backend.dto.AdminUserRequestDto;
 import com.tvscollections.backend.service.AdminDashboardService;
 import com.tvscollections.backend.service.AdminUserService;
 import com.tvscollections.backend.service.DialerProxyService;
+import com.tvscollections.backend.service.NcRecordUploadService;
 import com.tvscollections.backend.model.UploadStatus;
 import com.tvscollections.backend.model.Role;
+import com.tvscollections.backend.model.User;
 import com.tvscollections.backend.repository.UserRepository;
 import com.tvscollections.backend.security.UserPrincipal;
 import org.springframework.http.HttpStatus;
@@ -22,6 +24,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.io.ByteArrayOutputStream;
@@ -37,15 +40,18 @@ public class AdminController {
     private final AdminDashboardService adminDashboardService;
     private final AdminUserService adminUserService;
     private final DialerProxyService dialerProxyService;
+    private final NcRecordUploadService ncRecordUploadService;
     private final UserRepository userRepository;
 
     public AdminController(AdminDashboardService adminDashboardService,
                            AdminUserService adminUserService,
                            DialerProxyService dialerProxyService,
+                           NcRecordUploadService ncRecordUploadService,
                            UserRepository userRepository) {
         this.adminDashboardService = adminDashboardService;
         this.adminUserService = adminUserService;
         this.dialerProxyService = dialerProxyService;
+        this.ncRecordUploadService = ncRecordUploadService;
         this.userRepository = userRepository;
     }
 
@@ -114,6 +120,44 @@ public class AdminController {
         }
     }
 
+    @GetMapping("/dialer/agent-stats")
+    public ResponseEntity<?> getDialerAgentStats(@RequestParam("startDate") String startDate,
+                                                 @RequestParam("endDate") String endDate,
+                                                 @RequestParam(value = "agentUser", required = false) String agentUser) {
+        try {
+            validateAdmin();
+            LocalDate parsedStartDate;
+            LocalDate parsedEndDate;
+
+            try {
+                parsedStartDate = LocalDate.parse(startDate);
+                parsedEndDate = LocalDate.parse(endDate);
+            } catch (DateTimeParseException error) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Dates must use yyyy-MM-dd format", error);
+            }
+
+            if (!org.springframework.util.StringUtils.hasText(agentUser)) {
+                List<String> dialerUsers = adminUserService.getUsers().stream()
+                        .filter(user -> Boolean.TRUE.equals(user.isActive))
+                        .map(user -> user.dialerUser)
+                        .filter(org.springframework.util.StringUtils::hasText)
+                        .toList();
+
+                return ResponseEntity.ok()
+                        .contentType(MediaType.TEXT_PLAIN)
+                        .body(dialerProxyService.getAgentStatsExport(parsedStartDate, parsedEndDate, dialerUsers));
+            }
+
+            return ResponseEntity.ok()
+                    .contentType(MediaType.TEXT_PLAIN)
+                    .body(dialerProxyService.getAgentStatsExport(parsedStartDate, parsedEndDate, agentUser));
+        } catch (ResponseStatusException error) {
+            return handleControllerError("Get dialer agent stats failed", error);
+        } catch (Exception error) {
+            return handleControllerError("Get dialer agent stats failed", error);
+        }
+    }
+
     @GetMapping("/export/feedback")
     public ResponseEntity<?> exportFeedback(@RequestParam("startDate") String startDate,
                                             @RequestParam("endDate") String endDate,
@@ -169,6 +213,20 @@ public class AdminController {
             return handleControllerError("Activate upload failed", error);
         } catch (Exception error) {
             return handleControllerError("Activate upload failed", error);
+        }
+    }
+
+    @PostMapping("/nc-records/upload")
+    public ResponseEntity<?> uploadNcRecords(@RequestParam("file") MultipartFile file,
+                                             @RequestParam("productKey") String productKey,
+                                             @RequestParam(value = "progressId", required = false) String progressId) {
+        try {
+            User adminUser = validateAdminAndGetUser();
+            return ResponseEntity.ok(ncRecordUploadService.uploadNcRecords(file, adminUser, productKey, progressId));
+        } catch (ResponseStatusException error) {
+            return handleControllerError("NC record upload failed", error);
+        } catch (Exception error) {
+            return handleControllerError("NC record upload failed", error);
         }
     }
 
@@ -247,6 +305,10 @@ public class AdminController {
     }
 
     private void validateAdmin() {
+        validateAdminAndGetUser();
+    }
+
+    private User validateAdminAndGetUser() {
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
         boolean isAdmin = authentication != null && (
                 authentication.getAuthorities().stream()
@@ -258,6 +320,13 @@ public class AdminController {
         if (!isAdmin) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Admin access required");
         }
+
+        if (authentication.getPrincipal() instanceof UserPrincipal userPrincipal) {
+            return userPrincipal.getUser();
+        }
+
+        return userRepository.findByUsername(authentication.getName())
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Admin user not found"));
     }
 
     private boolean hasAdminPrincipalRole(Authentication authentication) {

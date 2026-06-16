@@ -1,6 +1,7 @@
 package com.tvscollections.backend.repository;
 
 import com.tvscollections.backend.dto.FeedbackHistoryDto;
+import com.tvscollections.backend.dto.ProductCallCountDto;
 import com.tvscollections.backend.model.Feedback;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Slice;
@@ -15,6 +16,23 @@ import java.util.List;
 public interface FeedbackRepository extends JpaRepository<Feedback, Long> {
     List<Feedback> findByUploadFileDataIdOrderByCreatedAtDesc(Long uploadFileDataId);
     Long countByCreatedAtGreaterThanEqualAndCreatedAtLessThan(LocalDateTime start, LocalDateTime end);
+
+    @Query("""
+            SELECT new com.tvscollections.backend.dto.ProductCallCountDto(
+                productId.code,
+                product.name,
+                COUNT(f)
+            )
+            FROM Feedback f
+            JOIN f.uploadFileData lead
+            JOIN lead.productId product
+            WHERE f.createdAt >= :start
+              AND f.createdAt < :end
+            GROUP BY productId.code, product.name
+            ORDER BY productId.name ASC
+            """)
+    List<ProductCallCountDto> countCallsByProductCreatedAtBetween(@Param("start") LocalDateTime start,
+                                                                  @Param("end") LocalDateTime end);
 
     @Query("""
             SELECT COUNT(f)
@@ -32,7 +50,7 @@ public interface FeedbackRepository extends JpaRepository<Feedback, Long> {
             FROM Feedback f
             JOIN FETCH f.uploadFileData lead
             JOIN FETCH lead.uploadFile uploadFile
-            JOIN FETCH lead.product product
+            JOIN FETCH lead.productId product
             JOIN FETCH f.agent agent
             WHERE f.createdAt >= :start
               AND f.createdAt < :end
@@ -47,7 +65,7 @@ public interface FeedbackRepository extends JpaRepository<Feedback, Long> {
             FROM Feedback f
             JOIN FETCH f.uploadFileData lead
             JOIN FETCH lead.uploadFile uploadFile
-            JOIN FETCH lead.product product
+            JOIN FETCH lead.productId product
             JOIN FETCH f.agent agent
             WHERE f.createdAt >= :start
               AND f.createdAt < :end
