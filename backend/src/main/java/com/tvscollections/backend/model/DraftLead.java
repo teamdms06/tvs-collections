@@ -39,6 +39,9 @@ public class DraftLead {
     @Column(name = "form_data_json", columnDefinition = "TEXT", nullable = false)
     private String formDataJson;
 
+    @Column(name = "lead_status", nullable = false, length = 20)
+    private String leadStatus = "active";
+
     @Column(name = "created_at", nullable = false)
     private LocalDateTime createdAt;
 
@@ -114,6 +117,14 @@ public class DraftLead {
 
     public void setFormDataJson(String formDataJson) {
         this.formDataJson = formDataJson;
+    }
+
+    public String getLeadStatus() {
+        return leadStatus;
+    }
+
+    public void setLeadStatus(String leadStatus) {
+        this.leadStatus = leadStatus;
     }
 
     public LocalDateTime getCreatedAt() {

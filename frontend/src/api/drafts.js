@@ -13,7 +13,7 @@ function getAuthHeaders() {
  * @param {{agreementNumber:string, leadId?:number, productKey?:string, formDataJson:string}} draft
  */
 export async function saveDraft(draft) {
-  const response = await fetch(`${API_BASE_URL}/drafts`, {
+  const response = await fetch(`${API_BASE_URL}/user/drafts`, {
     method: "POST",
     headers: getAuthHeaders(),
     body: JSON.stringify(draft),
@@ -28,12 +28,9 @@ export async function saveDraft(draft) {
 /**
  * List drafts for the current user, optionally filtered by product.
  */
-export async function listDrafts(productKey) {
-  const url = new URL(`${API_BASE_URL}/drafts`);
-  if (productKey) {
-    url.searchParams.append("productKey", productKey);
-  }
-  const response = await fetch(url.toString(), {
+export async function listDrafts() {
+  const url = `${API_BASE_URL}/user/drafts`;
+  const response = await fetch(url, {
     headers: getAuthHeaders(),
   });
   if (!response.ok) {
@@ -47,7 +44,7 @@ export async function listDrafts(productKey) {
  * Delete a draft by id.
  */
 export async function deleteDraft(id) {
-  const response = await fetch(`${API_BASE_URL}/drafts/${id}`, {
+  const response = await fetch(`${API_BASE_URL}/user/drafts/${id}`, {
     method: "DELETE",
     headers: getAuthHeaders(),
   });

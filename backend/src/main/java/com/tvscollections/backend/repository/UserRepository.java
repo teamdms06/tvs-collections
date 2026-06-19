@@ -13,6 +13,7 @@ import java.util.Collection;
 public interface UserRepository extends JpaRepository<User, Long> {
     Optional<User> findByEmail(String email);
     Optional<User> findByUsername(String username);
+    Optional<User> findByDialerUserIgnoreCase(String dialerUser);
 
     @Query("""
             select count(distinct u)
@@ -88,6 +89,22 @@ public interface UserRepository extends JpaRepository<User, Long> {
             order by u.createdAt desc
             """)
     List<User> findAllNonAdminWithRoles();
+
+    @Query("""
+            select distinct u
+            from User u
+            where u.isActive = true
+                and u.dialerUser is not null
+                and trim(u.dialerUser) <> ''
+                and not exists (
+                    select userRole
+                    from UserRole userRole
+                    where userRole.user = u
+                        and lower(userRole.role.name) in ('admin', 'role_admin')
+                )
+            order by u.name asc
+            """)
+    List<User> findActiveNonAdminDialerUsers();
 
     @EntityGraph(attributePaths = {
             "userRoles",

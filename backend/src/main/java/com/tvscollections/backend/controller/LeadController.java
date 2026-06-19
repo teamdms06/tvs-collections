@@ -2,8 +2,10 @@ package com.tvscollections.backend.controller;
 
 import com.tvscollections.backend.dto.FeedbackRequestDto;
 import com.tvscollections.backend.dto.UploadResultDto;
+import com.tvscollections.backend.model.DraftLead;
 import com.tvscollections.backend.model.UploadFileData;
 import com.tvscollections.backend.security.UserPrincipal;
+import com.tvscollections.backend.service.DraftLeadService;
 import com.tvscollections.backend.service.ProductAccessService;
 import com.tvscollections.backend.service.UploadFileDataService;
 import com.tvscollections.backend.service.UploadProgressService;
@@ -28,15 +30,18 @@ public class LeadController {
     private final ProductAccessService productAccessService;
     private final UserDashboardService userDashboardService;
     private final UploadProgressService uploadProgressService;
+    private final DraftLeadService draftLeadService;
 
     public LeadController(UploadFileDataService uploadFileDataService,
                           ProductAccessService productAccessService,
                           UserDashboardService userDashboardService,
-                          UploadProgressService uploadProgressService) {
+                          UploadProgressService uploadProgressService,
+                          DraftLeadService draftLeadService) {
         this.uploadFileDataService = uploadFileDataService;
         this.productAccessService = productAccessService;
         this.userDashboardService = userDashboardService;
         this.uploadProgressService = uploadProgressService;
+        this.draftLeadService = draftLeadService;
     }
 
     @GetMapping("/user/dashboard")
@@ -58,6 +63,47 @@ public class LeadController {
             return handleControllerError("Mark user activity failed", error);
         } catch (Exception error) {
             return handleControllerError("Mark user activity failed", error);
+        }
+    }
+
+    @PostMapping("/user/drafts")
+    public ResponseEntity<?> saveUserDraft(@RequestBody DraftLead draft) {
+        try {
+            DraftLead saved = draftLeadService.saveDraft(
+                    getCurrentUser().getUser(),
+                    draft.getAgreementNumber(),
+                    draft.getLeadId(),
+                    draft.getProductKey(),
+                    draft.getFormDataJson()
+            );
+            return ResponseEntity.ok(saved);
+        } catch (ResponseStatusException error) {
+            return handleControllerError("Save user draft failed", error);
+        } catch (Exception error) {
+            return handleControllerError("Save user draft failed", error);
+        }
+    }
+
+    @GetMapping("/user/drafts")
+    public ResponseEntity<?> listUserDrafts() {
+        try {
+            return ResponseEntity.ok(draftLeadService.getDrafts(getCurrentUser().getUser(), null));
+        } catch (ResponseStatusException error) {
+            return handleControllerError("List user drafts failed", error);
+        } catch (Exception error) {
+            return handleControllerError("List user drafts failed", error);
+        }
+    }
+
+    @DeleteMapping("/user/drafts/{id}")
+    public ResponseEntity<?> deleteUserDraft(@PathVariable("id") Long id) {
+        try {
+            draftLeadService.deleteDraft(getCurrentUser().getUser(), id);
+            return ResponseEntity.noContent().build();
+        } catch (ResponseStatusException error) {
+            return handleControllerError("Delete user draft failed", error);
+        } catch (Exception error) {
+            return handleControllerError("Delete user draft failed", error);
         }
     }
 

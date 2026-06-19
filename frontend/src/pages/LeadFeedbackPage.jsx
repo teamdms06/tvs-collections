@@ -6,7 +6,7 @@ import {
   searchConsumerLeads,
 } from "../api/leads";
 import { saveDraft, listDrafts, deleteDraft } from "../api/drafts";
-import { getMyDialerAgentStatus } from "../api/dialer";
+import { getMyDialerAgentStatus, saveAgentCallLog } from "../api/dialer";
 import { API_BASE_URL } from "../api/config";
 
 const initialFeedback = {
@@ -1037,7 +1037,10 @@ export default function LeadFeedbackPage({ config, onLogout, user }) {
           draftValues: parsed,
         });
       } else if (draft.agreementNumber) {
-        const results = await searchConsumerLeads(draft.agreementNumber, config.key);
+        const results = await searchConsumerLeads(
+          draft.agreementNumber,
+          config.key,
+        );
         const normalizedResults = results.map(normalizeLead);
         if (normalizedResults.length === 0) {
           notify("Could not find the lead for this draft.", "error");
@@ -1071,7 +1074,7 @@ export default function LeadFeedbackPage({ config, onLogout, user }) {
         setActiveDraftId(null);
         setFeedbackDirty(false);
       }
-      notify("Draft deleted.", "success");
+      notify("Draft removed from your bucket.", "success");
     } catch (error) {
       notify(error.message || "Failed to delete draft.", "error");
     }
@@ -1252,8 +1255,29 @@ export default function LeadFeedbackPage({ config, onLogout, user }) {
           //   },
           // );
           setPendingAssignedCallDetail({
+            hitCallLogId: callData.hitCallLogId,
             callerId: agentStatus.callerid,
             vendorLeadCode: agentStatus.vendor_lead_code,
+          });
+          saveAgentCallLog({
+            hitCallLogId: callData.hitCallLogId,
+            observedAt: callData.observedAt || new Date().toISOString(),
+            agentUser: user.dialerUser || user.username,
+            agentName: agentStatus.full_name || user.name,
+            status: agentStatus.status,
+            callerId: agentStatus.callerid,
+            leadId: agentStatus.lead_id,
+            campaignId: agentStatus.campaign_id,
+            callsToday: Number.parseInt(agentStatus.calls_today, 10) || null,
+            phoneNumber: agentStatus.phone_number,
+            vendorLeadCode: agentStatus.vendor_lead_code,
+            sessionId: agentStatus.session_id,
+            agentDetailJson: JSON.stringify(agentStatus),
+          }).catch((error) => {
+            console.warn(
+              "[Campaign Webhook] Could not save agent call log.",
+              error.message,
+            );
           });
           refreshAgentLiveStatus();
           return;
@@ -1576,7 +1600,10 @@ export default function LeadFeedbackPage({ config, onLogout, user }) {
             setFeedbackDirty(false);
             loadDrafts();
           } catch (draftError) {
-            console.warn("Failed to save draft before auto-search:", draftError);
+            console.warn(
+              "Failed to save draft before auto-search:",
+              draftError,
+            );
           }
         }
 
@@ -1763,7 +1790,9 @@ export default function LeadFeedbackPage({ config, onLogout, user }) {
                 <div className="draft-card" key={draft.id}>
                   <div className="draft-card__info">
                     <strong>{draft.agreementNumber}</strong>
-                    <small>{formatDateTime(draft.updatedAt || draft.createdAt)}</small>
+                    <small>
+                      {formatDateTime(draft.updatedAt || draft.createdAt)}
+                    </small>
                   </div>
                   <div className="draft-card__actions">
                     <button
@@ -1806,7 +1835,11 @@ export default function LeadFeedbackPage({ config, onLogout, user }) {
                 Dashboard
               </button>
               <button
-                className={showDraftsPanel ? "admin-menu-item admin-menu-item--active" : "admin-menu-item"}
+                className={
+                  showDraftsPanel
+                    ? "admin-menu-item admin-menu-item--active"
+                    : "admin-menu-item"
+                }
                 onClick={toggleDraftsPanel}
                 type="button"
               >
@@ -2054,14 +2087,7 @@ export default function LeadFeedbackPage({ config, onLogout, user }) {
                   </form>
 
                   <div className="form-actions">
-                    <button
-                      className="secondary-action"
-                      disabled={loading || redirectingAfterSubmit}
-                      onClick={handleSaveDraft}
-                      type="button"
-                    >
-                      {loading ? "Saving..." : "Save Draft"}
-                    </button>
+
                     <button
                       className="primary-action"
                       disabled={loading || redirectingAfterSubmit}

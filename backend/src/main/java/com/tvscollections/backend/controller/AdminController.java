@@ -1,9 +1,12 @@
 package com.tvscollections.backend.controller;
 
 import com.tvscollections.backend.dto.AdminUserRequestDto;
+import com.tvscollections.backend.dto.HitCallLogRequestDto;
 import com.tvscollections.backend.service.AdminDashboardService;
 import com.tvscollections.backend.service.AdminUserService;
 import com.tvscollections.backend.service.DialerProxyService;
+import com.tvscollections.backend.service.DraftLeadService;
+import com.tvscollections.backend.service.HitCallLogService;
 import com.tvscollections.backend.service.NcRecordUploadService;
 import com.tvscollections.backend.model.UploadStatus;
 import com.tvscollections.backend.model.Role;
@@ -40,17 +43,23 @@ public class AdminController {
     private final AdminDashboardService adminDashboardService;
     private final AdminUserService adminUserService;
     private final DialerProxyService dialerProxyService;
+    private final DraftLeadService draftLeadService;
+    private final HitCallLogService hitCallLogService;
     private final NcRecordUploadService ncRecordUploadService;
     private final UserRepository userRepository;
 
     public AdminController(AdminDashboardService adminDashboardService,
                            AdminUserService adminUserService,
                            DialerProxyService dialerProxyService,
+                           DraftLeadService draftLeadService,
+                           HitCallLogService hitCallLogService,
                            NcRecordUploadService ncRecordUploadService,
                            UserRepository userRepository) {
         this.adminDashboardService = adminDashboardService;
         this.adminUserService = adminUserService;
         this.dialerProxyService = dialerProxyService;
+        this.draftLeadService = draftLeadService;
+        this.hitCallLogService = hitCallLogService;
         this.ncRecordUploadService = ncRecordUploadService;
         this.userRepository = userRepository;
     }
@@ -155,6 +164,42 @@ public class AdminController {
             return handleControllerError("Get dialer agent stats failed", error);
         } catch (Exception error) {
             return handleControllerError("Get dialer agent stats failed", error);
+        }
+    }
+
+    @GetMapping("/hit-calls")
+    public ResponseEntity<?> getHitCalls(@RequestParam(value = "limit", required = false) Integer limit) {
+        try {
+            validateAdmin();
+            return ResponseEntity.ok(hitCallLogService.getLogs(limit));
+        } catch (ResponseStatusException error) {
+            return handleControllerError("Get hit calls failed", error);
+        } catch (Exception error) {
+            return handleControllerError("Get hit calls failed", error);
+        }
+    }
+
+    @PostMapping("/hit-calls")
+    public ResponseEntity<?> createHitCall(@RequestBody HitCallLogRequestDto request) {
+        try {
+            User adminUser = validateAdminAndGetUser();
+            return ResponseEntity.ok(hitCallLogService.createLog(request, adminUser));
+        } catch (ResponseStatusException error) {
+            return handleControllerError("Create hit call failed", error);
+        } catch (Exception error) {
+            return handleControllerError("Create hit call failed", error);
+        }
+    }
+
+    @GetMapping("/draft-leads")
+    public ResponseEntity<?> getDraftLeads() {
+        try {
+            validateAdmin();
+            return ResponseEntity.ok(draftLeadService.getAllDraftsForAdmin());
+        } catch (ResponseStatusException error) {
+            return handleControllerError("Get draft leads failed", error);
+        } catch (Exception error) {
+            return handleControllerError("Get draft leads failed", error);
         }
     }
 

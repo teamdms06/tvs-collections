@@ -33,6 +33,8 @@ public class DatabaseSchemaConfig {
 
         createAgentActivitySessionsTableIfMissing();
         createDraftLeadsTableIfMissing();
+        createHitCallLogsTableIfMissing();
+        createAgentCallLogsTableIfMissing();
 
         addColumnIfMissing(
                 "draft_leads",
@@ -53,6 +55,11 @@ public class DatabaseSchemaConfig {
                 "draft_leads",
                 "updated_at",
                 "TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP"
+        );
+        addColumnIfMissing(
+                "draft_leads",
+                "lead_status",
+                "VARCHAR(20) NOT NULL DEFAULT 'active'"
         );
 
         createIndexIfMissing(
@@ -130,6 +137,42 @@ public class DatabaseSchemaConfig {
                 "idx_draft_leads_user_lead",
                 "user_id, lead_id"
         );
+        createIndexIfMissing(
+                "hit_call_logs",
+                "idx_hit_call_observed_at",
+                "observed_at"
+        );
+        createIndexIfMissing(
+                "hit_call_logs",
+                "idx_hit_call_agent_observed",
+                "agent_id, observed_at"
+        );
+        createIndexIfMissing(
+                "hit_call_logs",
+                "idx_hit_call_campaign_observed",
+                "campaign_id, observed_at"
+        );
+        createIndexIfMissing(
+                "agent_call_logs",
+                "idx_agent_call_hit",
+                "hit_call_log_id"
+        );
+        createIndexIfMissing(
+                "agent_call_logs",
+                "idx_agent_call_agent_observed",
+                "agent_id, observed_at"
+        );
+        createIndexIfMissing(
+                "agent_call_logs",
+                "idx_agent_call_session",
+                "session_id"
+        );
+
+        try {
+            jdbcTemplate.execute("ALTER TABLE hit_call_logs MODIFY ready_agent_count INT NULL");
+        } catch (Exception error) {
+            System.out.println("Hit call ready count schema check skipped: " + error.getMessage());
+        }
     }
 
     private void createAgentActivitySessionsTableIfMissing() {
@@ -163,6 +206,7 @@ public class DatabaseSchemaConfig {
                         product_key VARCHAR(50) NULL,
                         agreement_number VARCHAR(100) NOT NULL,
                         form_data_json TEXT NOT NULL,
+                        lead_status VARCHAR(20) NOT NULL DEFAULT 'active',
                         created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
                         updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
                         PRIMARY KEY (id)
@@ -170,6 +214,74 @@ public class DatabaseSchemaConfig {
                     """);
         } catch (Exception error) {
             System.out.println("Draft leads schema check skipped: " + error.getMessage());
+        }
+    }
+
+    private void createHitCallLogsTableIfMissing() {
+        try {
+            jdbcTemplate.execute("""
+                    CREATE TABLE IF NOT EXISTS hit_call_logs (
+                        id BIGINT NOT NULL AUTO_INCREMENT,
+                        agent_id BIGINT NULL,
+                        recorded_by_user_id BIGINT NULL,
+                        observed_at DATETIME NOT NULL,
+                        campaign_id VARCHAR(50) NULL,
+                        caller VARCHAR(80) NULL,
+                        call_id VARCHAR(120) NULL,
+                        selected_agent_user VARCHAR(100) NULL,
+                        selected_agent_name VARCHAR(150) NULL,
+                        selected_agent_status VARCHAR(50) NULL,
+                        selected_agent_session_id VARCHAR(120) NULL,
+                        selected_agent_lead_id VARCHAR(120) NULL,
+                        selected_agent_ready_seconds BIGINT NULL,
+                        selected_agent_calls_today INT NULL,
+                        ready_agent_count INT NULL,
+                        selection_rule VARCHAR(500) NULL,
+                        call_payload_json TEXT NULL,
+                        ready_agents_json TEXT NULL,
+                        selected_agent_detail_json TEXT NULL,
+                        created_at DATETIME NOT NULL,
+                        PRIMARY KEY (id),
+                        CONSTRAINT fk_hit_call_agent
+                            FOREIGN KEY (agent_id) REFERENCES users(id),
+                        CONSTRAINT fk_hit_call_recorded_by
+                            FOREIGN KEY (recorded_by_user_id) REFERENCES users(id)
+                    )
+                    """);
+        } catch (Exception error) {
+            System.out.println("Hit call logs schema check skipped: " + error.getMessage());
+        }
+    }
+
+    private void createAgentCallLogsTableIfMissing() {
+        try {
+            jdbcTemplate.execute("""
+                    CREATE TABLE IF NOT EXISTS agent_call_logs (
+                        id BIGINT NOT NULL AUTO_INCREMENT,
+                        hit_call_log_id BIGINT NULL,
+                        agent_id BIGINT NULL,
+                        observed_at DATETIME NOT NULL,
+                        agent_user VARCHAR(100) NULL,
+                        agent_name VARCHAR(150) NULL,
+                        status VARCHAR(50) NULL,
+                        caller_id VARCHAR(120) NULL,
+                        lead_id VARCHAR(120) NULL,
+                        campaign_id VARCHAR(50) NULL,
+                        calls_today INT NULL,
+                        phone_number VARCHAR(80) NULL,
+                        vendor_lead_code VARCHAR(150) NULL,
+                        session_id VARCHAR(120) NULL,
+                        agent_detail_json TEXT NULL,
+                        created_at DATETIME NOT NULL,
+                        PRIMARY KEY (id),
+                        CONSTRAINT fk_agent_call_hit
+                            FOREIGN KEY (hit_call_log_id) REFERENCES hit_call_logs(id),
+                        CONSTRAINT fk_agent_call_user
+                            FOREIGN KEY (agent_id) REFERENCES users(id)
+                    )
+                    """);
+        } catch (Exception error) {
+            System.out.println("Agent call logs schema check skipped: " + error.getMessage());
         }
     }
 

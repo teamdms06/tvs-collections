@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import DashboardPage from "./admin/DashboardPage";
+import DraftLeadsPage from "./admin/DraftLeadsPage";
 import ExportDataPage from "./admin/ExportDataPage";
+import HitCallLogsPage from "./admin/HitCallLogsPage";
 import UploadDataPage from "./admin/UploadDataPage";
 import UserManagerPage from "./admin/UserManagerPage";
 import { adminMenu } from "./admin/adminMenu";
@@ -21,6 +23,14 @@ function AdminServiceLoader({ activeMenu, notify, user }) {
 
   if (activeMenu === "users") {
     return <UserManagerPage notify={notify} />;
+  }
+
+  if (activeMenu === "hit-calls") {
+    return <HitCallLogsPage notify={notify} />;
+  }
+
+  if (activeMenu === "draft-leads") {
+    return <DraftLeadsPage notify={notify} />;
   }
 
   return <DashboardPage />;

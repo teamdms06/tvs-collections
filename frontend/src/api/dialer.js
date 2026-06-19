@@ -13,3 +13,22 @@ export async function getMyDialerAgentStatus() {
 
   return text;
 }
+
+export async function saveAgentCallLog(payload) {
+  const token = localStorage.getItem("authToken");
+  const response = await fetch(`${API_BASE_URL}/agent-call-logs`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      ...(token && { Authorization: `Bearer ${token}` }),
+    },
+    body: JSON.stringify(payload),
+  });
+  const text = await response.text();
+
+  if (!response.ok) {
+    throw new Error(`${response.status} ${response.statusText}: ${text || "Agent call log save failed"}`);
+  }
+
+  return text ? JSON.parse(text) : null;
+}

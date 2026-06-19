@@ -426,6 +426,61 @@ function getDialerElapsedMs(timerState, user, nowTick) {
   return Math.max(0, nowTick - timer.startedAt);
 }
 
+function safeJsonStringify(value) {
+  try {
+    return JSON.stringify(value ?? null);
+  } catch {
+    return null;
+  }
+}
+
+function getCallIdentifier(callData) {
+  return String(
+    callData?.callId ||
+      callData?.leadId ||
+      callData?.uniqueid ||
+      callData?.callerId ||
+      "",
+  ).trim();
+}
+
+function wait(ms) {
+  return new Promise((resolve) => window.setTimeout(resolve, ms));
+}
+
+function hasRealCallDetail(detail) {
+  if (!detail) {
+    return false;
+  }
+
+  const status = String(detail.status || "").trim().toUpperCase();
+  const leadId = String(detail.lead_id || "").trim();
+  const hasLead = Boolean(leadId && leadId !== "0");
+  const hasCallValue = Boolean(
+    String(detail.callerid || "").trim() ||
+      String(detail.phone_number || "").trim() ||
+      String(detail.vendor_lead_code || "").trim(),
+  );
+
+  return status !== "READY" && (hasLead || hasCallValue);
+}
+
+async function getLiveHitCallDetail(agentUser) {
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    const detail = parseDialerAgentStatusCsv(await getDialerAgent(agentUser));
+
+    if (hasRealCallDetail(detail)) {
+      return detail;
+    }
+
+    if (attempt < 4) {
+      await wait(700);
+    }
+  }
+
+  return null;
+}
+
 function loadSocketIoClient(serverUrl) {
   if (window.io) {
     return Promise.resolve(window.io);
@@ -803,6 +858,7 @@ function useDialerLiveState() {
     }
 
     const bestAgent = readyAgents[0];
+    let selectedAgentDetail = null;
 
     // console.log(
     //   `[Campaign Webhook] Best available agent for ${campaignId} call ${callData.caller}: ${bestAgent.user} (${bestAgent.fullName}) ready for ${bestAgent.readyTimePrecise}`,
@@ -829,9 +885,10 @@ function useDialerLiveState() {
     // );
 
     try {
-      const agentStatus = parseDialerAgentStatusCsv(await getDialerAgent(bestAgent.user));
+      const agentStatus = await getLiveHitCallDetail(bestAgent.user);
 
       if (agentStatus) {
+        selectedAgentDetail = agentStatus;
         // console.log(
         //   `[Campaign Webhook] Selected agent live call detail: ${bestAgent.user} (${bestAgent.fullName})`,
         //   {
@@ -843,7 +900,7 @@ function useDialerLiveState() {
         // );
       } else {
         console.warn(
-          `[Campaign Webhook] No live agent status detail returned for ${bestAgent.user}`,
+          `[Campaign Webhook] No live call detail returned for ${bestAgent.user}`,
         );
       }
     } catch (agentStatusError) {

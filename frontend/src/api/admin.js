@@ -100,6 +100,35 @@ export async function getDialerAgentStats(startDate, endDate, agentUser = "") {
   return parseResponse(response);
 }
 
+export async function getHitCallLogs(limit = 200) {
+  const response = await fetch(
+    `${API_BASE_URL}/admin/hit-calls?limit=${encodeURIComponent(limit)}`,
+    {
+      headers: getAuthHeaders(),
+    },
+  );
+
+  return parseResponse(response);
+}
+
+export async function createHitCallLog(payload) {
+  const response = await fetch(`${API_BASE_URL}/admin/hit-calls`, {
+    method: "POST",
+    headers: getAuthHeaders(),
+    body: JSON.stringify(payload),
+  });
+
+  return parseResponse(response);
+}
+
+export async function getAdminDraftLeads() {
+  const response = await fetch(`${API_BASE_URL}/admin/draft-leads`, {
+    headers: getAuthHeaders(),
+  });
+
+  return parseResponse(response);
+}
+
 export async function getUploadedFiles() {
   const response = await fetch(`${API_BASE_URL}/admin/uploads`, {
     headers: getAuthHeaders(),
