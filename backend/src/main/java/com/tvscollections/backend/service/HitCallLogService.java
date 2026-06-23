@@ -70,20 +70,8 @@ public class HitCallLogService {
             log.selectedAgentLeadId = null;
             log.selectedAgentCallsToday = null;
         }
+        // Deduplication checks disabled to ensure every hit call is saved as a new record.
 
-        if (StringUtils.hasText(log.callId)) {
-            var existingLog = hitCallLogRepository.findByCallId(log.callId);
-            if (existingLog.isPresent()) {
-                return toDto(existingLog.get());
-            }
-        } else if (log.observedAt != null && StringUtils.hasText(log.campaignId) && StringUtils.hasText(log.caller)) {
-            var existingLog = hitCallLogRepository
-                    .findTopByCampaignIdAndCallerAndObservedAtOrderByIdAsc(log.campaignId, log.caller, log.observedAt);
-
-            if (existingLog.isPresent()) {
-                return toDto(existingLog.get());
-            }
-        }
 
         if (StringUtils.hasText(log.selectedAgentUser)) {
             log.agent = userRepository.findByDialerUserIgnoreCase(log.selectedAgentUser.trim()).orElse(null);

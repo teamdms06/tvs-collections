@@ -158,7 +158,9 @@ async function handleCampaignWebhook(req, res) {
   const caller =
     data.phoneNo || data.phone || data.mobile || data.caller || "Unknown";
   const clientIp = normalizeClientIp(req);
-  const observedAt = new Date().toISOString();
+  const date = new Date();
+  const pad = (n) => String(n).padStart(2, '0');
+  const observedAt = `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}.000+05:30`;
 
   if (!campaignId) {
     return res
