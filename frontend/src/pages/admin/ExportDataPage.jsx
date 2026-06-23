@@ -47,7 +47,9 @@ export default function ExportDataPage({ notify }) {
       notify(
         mode === "latest"
           ? "Latest record Excel exported successfully."
-          : "All feedback Excel exported successfully.",
+          : mode === "followups"
+            ? "Follow-up leads Excel exported successfully."
+            : "All feedback Excel exported successfully.",
         "success",
       );
     } catch (error) {
@@ -100,6 +102,15 @@ export default function ExportDataPage({ notify }) {
           type="button"
         >
           {isExporting ? "Exporting..." : "Export Latest Records"}
+        </button>
+        <button
+          className="secondary-action"
+          disabled={isExporting}
+          onClick={() => handleExport("followups")}
+          type="button"
+          style={{ backgroundColor: "#2e7d32", color: "#fff", borderColor: "#2e7d32" }}
+        >
+          {isExporting ? "Exporting..." : "Export Follow-up Leads"}
         </button>
       </form>
     </section>

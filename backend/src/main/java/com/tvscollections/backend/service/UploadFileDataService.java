@@ -454,6 +454,7 @@ public class UploadFileDataService {
         feedback.alternateMobileNumber = textOrNull(feedbackDto.alternateMobileNumber);
         feedback.sourceIncome = textOrNull(feedbackDto.sourceIncome);
         feedback.remark = textOrNull(feedbackDto.remark);
+        feedback.isFollowup = Boolean.TRUE.equals(feedbackDto.isFollowup);
         validateSourceIncome(feedback);
         LocalDateTime punchTimestamp = currentDatabaseTime();
         feedback.createdAt = punchTimestamp;
@@ -474,6 +475,9 @@ public class UploadFileDataService {
     }
 
     private void validateSourceIncome(Feedback feedback) {
+        if (Boolean.TRUE.equals(feedback.isFollowup)) {
+            return;
+        }
         String disposition = feedback.disposition == null ? "" : feedback.disposition.trim();
         String subDisposition = feedback.subDisposition == null ? "" : feedback.subDisposition.trim();
         boolean requiresSourceIncome = "Positive".equalsIgnoreCase(disposition)
@@ -1053,5 +1057,15 @@ public class UploadFileDataService {
             statement.setTimestamp(index++, Timestamp.valueOf(now));
             statement.setTimestamp(index, Timestamp.valueOf(now));
         });
+    }
+
+    @Transactional(readOnly = true)
+    public List<FeedbackHistoryDto> getFollowupFeedbacksForAgent(String productCode, String agentEmail) {
+        User agent = userRepository.findByUsername(agentEmail)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Agent not found"));
+        List<Feedback> feedbacks = feedbackRepository.findFollowupsByProductAndAgent(productCode, agent.id);
+        return feedbacks.stream()
+                .map(FeedbackHistoryDto::new)
+                .toList();
     }
 }

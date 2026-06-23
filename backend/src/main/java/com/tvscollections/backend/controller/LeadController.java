@@ -125,6 +125,18 @@ public class LeadController {
         }
     }
 
+    @GetMapping("/{productKey}/leads/followups")
+    public ResponseEntity<?> getFollowupLeads(@PathVariable("productKey") String productKey) {
+        try {
+            validateProductAccess(productKey);
+            return ResponseEntity.ok(uploadFileDataService.getFollowupFeedbacksForAgent(productKey, getCurrentUserEmail()));
+        } catch (ResponseStatusException error) {
+            return handleControllerError("Get followup leads failed", error);
+        } catch (Exception error) {
+            return handleControllerError("Get followup leads failed", error);
+        }
+    }
+
     @GetMapping("/{productKey}/leads/{leadId}")
     public ResponseEntity<?> getLeadById(@PathVariable("productKey") String productKey, @PathVariable("leadId") Long leadId) {
         try {

@@ -71,7 +71,12 @@ public class HitCallLogService {
             log.selectedAgentCallsToday = null;
         }
 
-        if (log.observedAt != null && StringUtils.hasText(log.campaignId) && StringUtils.hasText(log.caller)) {
+        if (StringUtils.hasText(log.callId)) {
+            var existingLog = hitCallLogRepository.findByCallId(log.callId);
+            if (existingLog.isPresent()) {
+                return toDto(existingLog.get());
+            }
+        } else if (log.observedAt != null && StringUtils.hasText(log.campaignId) && StringUtils.hasText(log.caller)) {
             var existingLog = hitCallLogRepository
                     .findTopByCampaignIdAndCallerAndObservedAtOrderByIdAsc(log.campaignId, log.caller, log.observedAt);
 
@@ -102,12 +107,22 @@ public class HitCallLogService {
             return null;
         }
 
+        String trimmed = observedAt.trim();
         try {
-            return OffsetDateTime.parse(observedAt.trim())
+            return OffsetDateTime.parse(trimmed)
                     .atZoneSameInstant(ZoneId.systemDefault())
                     .toLocalDateTime();
-        } catch (Exception error) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "observedAt must be an ISO timestamp", error);
+        } catch (Exception e1) {
+            try {
+                return java.time.LocalDateTime.parse(trimmed.replace(" ", "T"));
+            } catch (Exception e2) {
+                try {
+                    java.time.format.DateTimeFormatter formatter = java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
+                    return java.time.LocalDateTime.parse(trimmed, formatter);
+                } catch (Exception e3) {
+                    throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "observedAt must be a valid timestamp (ISO OffsetDateTime or yyyy-MM-dd HH:mm:ss)", e3);
+                }
+            }
         }
     }
 

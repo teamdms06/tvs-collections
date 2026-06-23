@@ -21,6 +21,12 @@ public class FeedbackHistoryDto {
     public String alternateMobileNumber;
     public String sourceIncome;
     public String remark;
+    public Boolean isFollowup;
+    public String customerName;
+    public String agreementNumber;
+    public String mobileNumber;
+    public String agentName;
+    public String agentUsername;
 
     public FeedbackHistoryDto(Long id,
                               LocalDateTime createdAt,
@@ -33,9 +39,10 @@ public class FeedbackHistoryDto {
                               String callBackTime,
                               String alternateMobileNumber,
                               String sourceIncome,
-                              String remark) {
+                              String remark,
+                              Boolean isFollowup) {
         this(id, null, createdAt, null, disposition, subDisposition, paymentMode, ptpAmount, ptpDate, callBackDate,
-                callBackTime, alternateMobileNumber, sourceIncome, remark);
+                callBackTime, alternateMobileNumber, sourceIncome, remark, isFollowup);
     }
 
     public FeedbackHistoryDto(Long id,
@@ -51,7 +58,8 @@ public class FeedbackHistoryDto {
                               String callBackTime,
                               String alternateMobileNumber,
                               String sourceIncome,
-                              String remark) {
+                              String remark,
+                              Boolean isFollowup) {
         this.id = id;
         this.uploadFileDataId = uploadFileDataId;
         this.date = createdAt == null ? null : createdAt.toString();
@@ -66,6 +74,7 @@ public class FeedbackHistoryDto {
         this.alternateMobileNumber = alternateMobileNumber;
         this.sourceIncome = sourceIncome;
         this.remark = remark;
+        this.isFollowup = isFollowup;
     }
 
     public FeedbackHistoryDto(Feedback feedback) {
@@ -83,7 +92,17 @@ public class FeedbackHistoryDto {
                 feedback.callBackTime,
                 feedback.alternateMobileNumber,
                 feedback.sourceIncome,
-                feedback.remark
+                feedback.remark,
+                feedback.isFollowup
         );
+        if (feedback.uploadFileData != null) {
+            this.customerName = feedback.uploadFileData.customerName;
+            this.agreementNumber = feedback.uploadFileData.agreementNumber;
+            this.mobileNumber = feedback.uploadFileData.mobileNumber;
+        }
+        if (feedback.agent != null) {
+            this.agentName = feedback.agent.name;
+            this.agentUsername = feedback.agent.username;
+        }
     }
 }

@@ -20,4 +20,5 @@ public class FeedbackRequestDto {
     public String alternateMobileNumber;
     public String sourceIncome;
     public String remark;
+    public Boolean isFollowup;
 }

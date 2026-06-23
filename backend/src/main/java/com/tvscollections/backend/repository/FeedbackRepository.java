@@ -90,6 +90,22 @@ public interface FeedbackRepository extends JpaRepository<Feedback, Long> {
                                                            Pageable pageable);
 
     @Query("""
+            SELECT f
+            FROM Feedback f
+            JOIN FETCH f.uploadFileData lead
+            JOIN FETCH lead.uploadFile uploadFile
+            JOIN FETCH lead.productId product
+            JOIN FETCH f.agent agent
+            WHERE f.createdAt >= :start
+              AND f.createdAt < :end
+              AND f.isFollowup = true
+            ORDER BY lead.id ASC, f.createdAt DESC, f.id DESC
+            """)
+    Slice<Feedback> findFollowupExportRowsByCreatedAtBetween(@Param("start") LocalDateTime start,
+                                                             @Param("end") LocalDateTime end,
+                                                             Pageable pageable);
+
+    @Query("""
             SELECT new com.tvscollections.backend.dto.FeedbackHistoryDto(
                 f.id,
                 f.uploadFileData.id,
@@ -104,7 +120,8 @@ public interface FeedbackRepository extends JpaRepository<Feedback, Long> {
                 f.callBackTime,
                 f.alternateMobileNumber,
                 f.sourceIncome,
-                f.remark
+                f.remark,
+                f.isFollowup
             )
             FROM Feedback f
             WHERE f.uploadFileData.id = :uploadFileDataId
@@ -127,11 +144,35 @@ public interface FeedbackRepository extends JpaRepository<Feedback, Long> {
                 f.callBackTime,
                 f.alternateMobileNumber,
                 f.sourceIncome,
-                f.remark
+                f.remark,
+                f.isFollowup
             )
             FROM Feedback f
             WHERE f.uploadFileData.id IN :uploadFileDataIds
             ORDER BY f.uploadFileData.id ASC, f.createdAt DESC, f.id DESC
             """)
     List<FeedbackHistoryDto> findHistoryByUploadFileDataIds(@Param("uploadFileDataIds") Collection<Long> uploadFileDataIds);
+
+    @Query("""
+            SELECT f
+            FROM Feedback f
+            JOIN FETCH f.uploadFileData lead
+            JOIN FETCH lead.productId product
+            WHERE f.isFollowup = true
+              AND product.code = :productCode
+              AND f.agent.id = :agentId
+            ORDER BY f.createdAt DESC
+            """)
+    List<Feedback> findFollowupsByProductAndAgent(@Param("productCode") String productCode, @Param("agentId") Long agentId);
+
+    @Query("""
+            SELECT f
+            FROM Feedback f
+            JOIN FETCH f.uploadFileData lead
+            JOIN FETCH lead.productId product
+            JOIN FETCH f.agent agent
+            WHERE f.isFollowup = true
+            ORDER BY f.createdAt DESC
+            """)
+    List<Feedback> findFollowupsForAdmin();
 }

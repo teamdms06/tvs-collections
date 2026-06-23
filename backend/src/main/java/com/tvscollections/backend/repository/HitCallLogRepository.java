@@ -19,4 +19,7 @@ public interface HitCallLogRepository extends JpaRepository<HitCallLog, Long> {
             String caller,
             LocalDateTime observedAt
     );
+
+    @EntityGraph(attributePaths = {"agent", "recordedBy"})
+    Optional<HitCallLog> findByCallId(String callId);
 }

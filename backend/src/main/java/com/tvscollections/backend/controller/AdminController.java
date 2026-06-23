@@ -203,6 +203,18 @@ public class AdminController {
         }
     }
 
+    @GetMapping("/leads/followups")
+    public ResponseEntity<?> getAdminFollowupLeads() {
+        try {
+            validateAdmin();
+            return ResponseEntity.ok(adminDashboardService.getFollowupsForAdmin());
+        } catch (ResponseStatusException error) {
+            return handleControllerError("Get admin followup leads failed", error);
+        } catch (Exception error) {
+            return handleControllerError("Get admin followup leads failed", error);
+        }
+    }
+
     @GetMapping("/export/feedback")
     public ResponseEntity<?> exportFeedback(@RequestParam("startDate") String startDate,
                                             @RequestParam("endDate") String endDate,

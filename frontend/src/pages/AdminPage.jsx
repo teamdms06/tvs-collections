@@ -5,6 +5,7 @@ import ExportDataPage from "./admin/ExportDataPage";
 import HitCallLogsPage from "./admin/HitCallLogsPage";
 import UploadDataPage from "./admin/UploadDataPage";
 import UserManagerPage from "./admin/UserManagerPage";
+import FollowUpPage from "./admin/FollowUpPage";
 import { adminMenu } from "./admin/adminMenu";
 import { Toast } from "./admin/shared";
 
@@ -31,6 +32,10 @@ function AdminServiceLoader({ activeMenu, notify, user }) {
 
   if (activeMenu === "draft-leads") {
     return <DraftLeadsPage notify={notify} />;
+  }
+
+  if (activeMenu === "followups") {
+    return <FollowUpPage notify={notify} />;
   }
 
   return <DashboardPage />;

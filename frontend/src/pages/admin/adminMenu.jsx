@@ -106,11 +106,28 @@ const DraftsIcon = () => (
   </svg>
 );
 
+const FollowupsIcon = () => (
+  <svg
+    viewBox="0 0 24 24"
+    width="22"
+    height="22"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="1.9"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+  >
+    <path d="M8 2v4M16 2v4M3 10h18M5 4h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2Z" />
+    <path d="M12 14l2 2 4-4" />
+  </svg>
+);
+
 export const adminMenu = [
   { key: "dashboard", label: "Dashboard", icon: DashboardIcon },
   { key: "upload", label: "Upload Data", icon: UploadIcon },
   { key: "export", label: "Export Data", icon: ExportIcon },
   { key: "hit-calls", label: "Hit Calls", icon: HitCallsIcon },
   { key: "draft-leads", label: "Draft Leads", icon: DraftsIcon },
+  { key: "followups", label: "Follow-ups", icon: FollowupsIcon },
   { key: "users", label: "User Manager", icon: UsersIcon },
 ];

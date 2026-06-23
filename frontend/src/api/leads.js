@@ -181,3 +181,10 @@ export async function saveConsumerFeedback(
 
   return parseResponse(response);
 }
+
+export async function getFollowupLeads(productKey = "consumer") {
+  const response = await fetch(`${API_BASE_URL}/${productKey}/leads/followups`, {
+    headers: getAuthHeaders(),
+  });
+  return parseResponse(response);
+}

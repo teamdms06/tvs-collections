@@ -3,6 +3,7 @@ package com.tvscollections.backend.service;
 import com.tvscollections.backend.dto.AdminDashboardDto;
 import com.tvscollections.backend.dto.ActiveUserDto;
 import com.tvscollections.backend.dto.RecentUploadDto;
+import com.tvscollections.backend.dto.FeedbackHistoryDto;
 import com.tvscollections.backend.model.Feedback;
 import com.tvscollections.backend.model.UploadFileData;
 import com.tvscollections.backend.repository.FeedbackRepository;
@@ -42,6 +43,7 @@ public class AdminDashboardService {
     private static final int EXPORT_ROW_WINDOW_SIZE = 100;
     public static final String EXPORT_MODE_ALL = "all";
     public static final String EXPORT_MODE_LATEST = "latest";
+    public static final String EXPORT_MODE_FOLLOWUPS = "followups";
     private static final DateTimeFormatter EXPORT_DATE_TIME_FORMATTER =
             DateTimeFormatter.ofPattern("dd-MM-yyyy HH:mm:ss");
 
@@ -190,9 +192,13 @@ public class AdminDashboardService {
             Pageable pageable = PageRequest.of(0, EXPORT_PAGE_SIZE);
             Slice<Feedback> feedbackRows;
             do {
-                feedbackRows = EXPORT_MODE_LATEST.equals(normalizedMode)
-                        ? feedbackRepository.findLatestExportRowsByCreatedAtBetween(start, endExclusive, pageable)
-                        : feedbackRepository.findExportRowsByCreatedAtBetween(start, endExclusive, pageable);
+                if (EXPORT_MODE_LATEST.equals(normalizedMode)) {
+                    feedbackRows = feedbackRepository.findLatestExportRowsByCreatedAtBetween(start, endExclusive, pageable);
+                } else if (EXPORT_MODE_FOLLOWUPS.equals(normalizedMode)) {
+                    feedbackRows = feedbackRepository.findFollowupExportRowsByCreatedAtBetween(start, endExclusive, pageable);
+                } else {
+                    feedbackRows = feedbackRepository.findExportRowsByCreatedAtBetween(start, endExclusive, pageable);
+                }
                 for (Feedback feedback : feedbackRows.getContent()) {
                     writeFeedbackExportRow(sheet.createRow(rowIndex++), feedback);
                 }
@@ -218,11 +224,11 @@ public class AdminDashboardService {
         }
 
         String normalizedMode = mode.trim().toLowerCase(Locale.ROOT);
-        if (EXPORT_MODE_ALL.equals(normalizedMode) || EXPORT_MODE_LATEST.equals(normalizedMode)) {
+        if (EXPORT_MODE_ALL.equals(normalizedMode) || EXPORT_MODE_LATEST.equals(normalizedMode) || EXPORT_MODE_FOLLOWUPS.equals(normalizedMode)) {
             return normalizedMode;
         }
 
-        throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Export mode must be all or latest");
+        throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Export mode must be all, latest or followups");
     }
 
     @Transactional
@@ -451,5 +457,13 @@ public class AdminDashboardService {
 
     private double numberValue(Number value) {
         return value == null ? 0 : value.doubleValue();
+    }
+
+    @Transactional(readOnly = true)
+    public List<FeedbackHistoryDto> getFollowupsForAdmin() {
+        List<Feedback> feedbacks = feedbackRepository.findFollowupsForAdmin();
+        return feedbacks.stream()
+                .map(FeedbackHistoryDto::new)
+                .toList();
     }
 }

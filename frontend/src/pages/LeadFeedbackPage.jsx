@@ -4,10 +4,16 @@ import {
   getUserDashboard,
   saveConsumerFeedback,
   searchConsumerLeads,
+  getFollowupLeads,
 } from "../api/leads";
 import { saveDraft, listDrafts, deleteDraft } from "../api/drafts";
 import { getMyDialerAgentStatus, saveAgentCallLog } from "../api/dialer";
 import { API_BASE_URL } from "../api/config";
+import {
+  FEEDBACK_FIELDS_BY_SUB_DISPOSITION as FOLLOWUP_FEEDBACK_FIELDS,
+  REQUIRED_FIELDS_BY_SUB_DISPOSITION as FOLLOWUP_REQUIRED_FIELDS,
+  commercialFollowupConfig,
+} from "../data/commercialFollowupConfig";
 
 const initialFeedback = {
   uid: "",
@@ -447,7 +453,7 @@ function getFeedbackValue(feedbackValues, activeFieldNames, name) {
     : "";
 }
 
-function toFeedbackRequest(feedbackValues, activeFieldNames) {
+function toFeedbackRequest(feedbackValues, activeFieldNames, isFollowupMode = false) {
   return {
     uid: cleanUidValue(feedbackValues.uid),
     disposition: cleanFeedbackValue(feedbackValues.disposition),
@@ -500,6 +506,7 @@ function toFeedbackRequest(feedbackValues, activeFieldNames) {
     remark: cleanFeedbackValue(
       getFeedbackValue(feedbackValues, activeFieldNames, "remark"),
     ),
+    isFollowup: isFollowupMode,
   };
 }
 
@@ -860,7 +867,7 @@ function TextField({ field, value, onChange }) {
   );
 }
 
-function SearchModal({ lead, onClose, onOpen }) {
+function SearchModal({ lead, onClose, onOpen, config }) {
   if (!lead) {
     return null;
   }
@@ -904,17 +911,27 @@ function SearchModal({ lead, onClose, onOpen }) {
             value={lead.bestDispoInternal}
           />
         </div>
-        <div className="form-actions">
+        <div className="form-actions" style={{ display: "flex", gap: "8px", justifyContent: "flex-end" }}>
           <button className="secondary-action" onClick={onClose} type="button">
             Cancel
           </button>
           <button
             className="primary-action"
-            onClick={() => onOpen(lead.id)}
+            onClick={() => onOpen(lead.id, { isFollowup: false })}
             type="button"
           >
-            Open
+            Open for Feedback
           </button>
+          {(lead.portfolio === "Commercial" || config.key === "commercial") && (
+            <button
+              className="primary-action"
+              style={{ backgroundColor: "#2e7d32", borderColor: "#2e7d32", color: "#fff" }}
+              onClick={() => onOpen(lead.id, { isFollowup: true })}
+              type="button"
+            >
+              Open for Follow-up
+            </button>
+          )}
         </div>
       </section>
     </div>
@@ -948,6 +965,10 @@ export default function LeadFeedbackPage({ config, onLogout, user }) {
   const [showDraftsPanel, setShowDraftsPanel] = useState(false);
   const [feedbackDirty, setFeedbackDirty] = useState(false);
   const [activeDraftId, setActiveDraftId] = useState(null);
+  const [isFollowupMode, setIsFollowupMode] = useState(false);
+  const [followups, setFollowups] = useState([]);
+  const [followupsLoading, setFollowupsLoading] = useState(false);
+  const [showFollowupsPanel, setShowFollowupsPanel] = useState(false);
   const submitRedirectTimerRef = useRef(null);
   const agentCallTimerKeyRef = useRef("");
   const activeLeadRef = useRef(null);
@@ -1088,6 +1109,27 @@ export default function LeadFeedbackPage({ config, onLogout, user }) {
     }
   };
 
+  const loadFollowups = useCallback(async () => {
+    setFollowupsLoading(true);
+    try {
+      const data = await getFollowupLeads(config.key);
+      setFollowups(Array.isArray(data) ? data : []);
+    } catch (error) {
+      console.warn("Failed to load followups:", error);
+      setFollowups([]);
+    } finally {
+      setFollowupsLoading(false);
+    }
+  }, [config.key]);
+
+  const toggleFollowupsPanel = () => {
+    const willOpen = !showFollowupsPanel;
+    setShowFollowupsPanel(willOpen);
+    if (willOpen) {
+      loadFollowups();
+    }
+  };
+
   useEffect(() => {
     const timeout = window.setTimeout(loadDashboard, 0);
     const interval = window.setInterval(loadDashboard, 30000);
@@ -1096,6 +1138,12 @@ export default function LeadFeedbackPage({ config, onLogout, user }) {
       window.clearInterval(interval);
     };
   }, []);
+
+  useEffect(() => {
+    if (config.key === "commercial") {
+      loadFollowups();
+    }
+  }, [config.key, loadFollowups]);
 
   const refreshAgentLiveStatus = useCallback(async () => {
     if (!String(user.dialerUser || user.username || "").trim()) {
@@ -1356,42 +1404,55 @@ export default function LeadFeedbackPage({ config, onLogout, user }) {
     };
   }, [refreshAgentLiveStatus, user.dialerUser, user.name, user.username]);
 
+  const activeConfig = isFollowupMode ? commercialFollowupConfig : config;
+
   const selectedGroup = useMemo(
     () =>
-      config.dispositionGroups.find(
+      activeConfig.dispositionGroups.find(
         (group) => group.name === feedbackValues.disposition,
       ),
-    [config.dispositionGroups, feedbackValues.disposition],
+    [activeConfig.dispositionGroups, feedbackValues.disposition],
   );
 
   const subDispositionOptions = selectedGroup?.options || [];
-  const activeFieldNames = useMemo(
-    () => getActiveFeedbackFieldNames(feedbackValues.subDisposition),
-    [feedbackValues.subDisposition],
-  );
-  const baseRequiredFieldNames = useMemo(
-    () => getRequiredFeedbackFieldNames(feedbackValues.subDisposition),
-    [feedbackValues.subDisposition],
-  );
-  const lead = activeLead || config.emptyLead;
+
+  const activeFieldNames = useMemo(() => {
+    const fieldsMap = isFollowupMode ? FOLLOWUP_FEEDBACK_FIELDS : FEEDBACK_FIELDS_BY_SUB_DISPOSITION;
+    return new Set([
+      ...alwaysSubmittedFields,
+      ...alwaysVisibleFeedbackFields,
+      ...(fieldsMap[feedbackValues.subDisposition] || ["remark"]),
+    ]);
+  }, [feedbackValues.subDisposition, isFollowupMode]);
+
+  const baseRequiredFieldNames = useMemo(() => {
+    const requiredMap = isFollowupMode ? FOLLOWUP_REQUIRED_FIELDS : REQUIRED_FIELDS_BY_SUB_DISPOSITION;
+    return new Set([
+      ...alwaysSubmittedFields,
+      ...(requiredMap[feedbackValues.subDisposition] || ["remark"]),
+    ]);
+  }, [feedbackValues.subDisposition, isFollowupMode]);
+
+  const lead = activeLead || activeConfig.emptyLead;
   const showUidField = true;
   const requiredFieldNames = useMemo(() => {
     const nextRequiredFieldNames = new Set(baseRequiredFieldNames);
-    if (showUidField) {
+    if (showUidField && !isFollowupMode) {
       nextRequiredFieldNames.add("uid");
     }
     return nextRequiredFieldNames;
-  }, [baseRequiredFieldNames, showUidField]);
+  }, [baseRequiredFieldNames, showUidField, isFollowupMode]);
+
   const editableFields = useMemo(
     () =>
-      (config.editableFields || [])
+      (activeConfig.editableFields || [])
         .filter((field) => field.name !== "reason")
         .filter((field) => isActiveFeedbackField(activeFieldNames, field.name))
         .map((field) => ({
           ...field,
           required: requiredFieldNames.has(field.name),
         })),
-    [activeFieldNames, config.editableFields, requiredFieldNames],
+    [activeFieldNames, activeConfig.editableFields, requiredFieldNames],
   );
   const goDashboard = () => {
     setActiveLead(null);
@@ -1406,6 +1467,8 @@ export default function LeadFeedbackPage({ config, onLogout, user }) {
     setActiveDraftId(null);
     setDrafts([]);
     setShowDraftsPanel(false);
+    setIsFollowupMode(false);
+    setShowFollowupsPanel(false);
   };
 
   const updateSearchQuery = (value) => {
@@ -1523,11 +1586,15 @@ export default function LeadFeedbackPage({ config, onLogout, user }) {
         const fullLead = normalizeLead(
           await getConsumerLeadById(leadId, config.key),
         );
-        const bestDispoGroup = config.dispositionGroups.find((group) =>
+        const useFollowupConfig = Boolean(options.isFollowup);
+        const targetConfig = useFollowupConfig ? commercialFollowupConfig : config;
+
+        const bestDispoGroup = targetConfig.dispositionGroups.find((group) =>
           group.options.includes(fullLead.bestDispoInternal),
         );
+
         const nextFeedbackValues = {
-          ...createInitialFeedback(config, fullLead),
+          ...createInitialFeedback(targetConfig, fullLead),
           ...(uidOverride ? { uid: uidOverride } : {}),
           ...(options.draftValues || {}),
           status: bestDispoGroup?.name || "",
@@ -1542,6 +1609,7 @@ export default function LeadFeedbackPage({ config, onLogout, user }) {
         setAssignedUidReadOnly(Boolean(uidOverride));
         setFeedbackDirty(false);
         setActiveDraftId(options.draftId || null);
+        setIsFollowupMode(useFollowupConfig);
         loadDrafts();
       } catch (error) {
         notify(error.message, "error");
@@ -1694,7 +1762,7 @@ export default function LeadFeedbackPage({ config, onLogout, user }) {
 
     setLoading(true);
     setNotice(null);
-    const feedbackRequest = toFeedbackRequest(feedbackValues, activeFieldNames);
+    const feedbackRequest = toFeedbackRequest(feedbackValues, activeFieldNames, isFollowupMode);
     const leadId = activeLead.id;
     try {
       await saveConsumerFeedback(leadId, feedbackRequest, config.key);
@@ -1703,6 +1771,7 @@ export default function LeadFeedbackPage({ config, onLogout, user }) {
         setActiveDraftId(null);
         loadDrafts();
       }
+      loadFollowups();
       setFeedbackDirty(false);
       loadDashboard();
       setRedirectingAfterSubmit(true);
@@ -1720,6 +1789,7 @@ export default function LeadFeedbackPage({ config, onLogout, user }) {
         setAssignedUidReadOnly(false);
         setFeedbackDirty(false);
         setActiveDraftId(null);
+        setIsFollowupMode(false);
         setRedirectingAfterSubmit(false);
         submitRedirectTimerRef.current = null;
       }, 3000);
@@ -1816,6 +1886,54 @@ export default function LeadFeedbackPage({ config, onLogout, user }) {
           )}
         </div>
       )}
+      {showFollowupsPanel && (
+        <div className="drafts-panel" role="dialog" aria-label="Submitted follow-ups">
+          <div className="drafts-panel__header">
+            <h2>Follow-up Logs</h2>
+            <button
+              className="icon-button"
+              onClick={() => setShowFollowupsPanel(false)}
+              type="button"
+              aria-label="Close follow-ups panel"
+            >
+              x
+            </button>
+          </div>
+          {followupsLoading && <p className="notice">Loading follow-ups...</p>}
+          {!followupsLoading && followups.length === 0 && (
+            <p className="notice">No follow-ups logged yet.</p>
+          )}
+          {!followupsLoading && followups.length > 0 && (
+            <div className="drafts-list">
+              {followups.map((item) => (
+                <div className="draft-card" key={item.id} style={{ padding: "12px", borderBottom: "1px solid #eee" }}>
+                  <div className="draft-card__info" style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+                    <strong style={{ fontSize: "1.1em", color: "#333" }}>{item.customerName || "Customer"}</strong>
+                    <span style={{ fontSize: "0.85em", color: "#666" }}>{item.agreementNumber}</span>
+                    <span className="lead-feedback-tag lead-feedback-tag--taken" style={{ fontSize: "0.75em", padding: "2px 6px", width: "fit-content", marginTop: "2px" }}>
+                      {item.disposition} / {item.subDisposition}
+                    </span>
+                    {item.remark && <p style={{ fontSize: "0.85em", margin: "4px 0", color: "#444", italic: "true" }}>"{item.remark}"</p>}
+                    <small style={{ color: "#888", fontSize: "0.75em" }}>{formatDateTime(item.date)}</small>
+                  </div>
+                  <div className="draft-card__actions" style={{ marginTop: "8px" }}>
+                    <button
+                      className="primary-action"
+                      onClick={() => {
+                        setShowFollowupsPanel(false);
+                        openLead(item.uploadFileDataId, { isFollowup: true });
+                      }}
+                      type="button"
+                    >
+                      Open Form
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
       <section className="app-shell app-shell--topbar">
         <header className="agent-topbar" aria-label="Agent workspace menu">
           <div className="agent-topbar__left">
@@ -1828,7 +1946,11 @@ export default function LeadFeedbackPage({ config, onLogout, user }) {
             </div>
             <nav className="admin-menu" aria-label="Agent navigation">
               <button
-                className="admin-menu-item admin-menu-item--active"
+                className={
+                  (!activeLead && !showDraftsPanel && !showFollowupsPanel)
+                    ? "admin-menu-item admin-menu-item--active"
+                    : "admin-menu-item"
+                }
                 onClick={goDashboard}
                 type="button"
               >
@@ -1845,6 +1967,19 @@ export default function LeadFeedbackPage({ config, onLogout, user }) {
               >
                 Drafts {drafts.length > 0 && `(${drafts.length})`}
               </button>
+              {config.key === "commercial" && (
+                <button
+                  className={
+                    showFollowupsPanel
+                      ? "admin-menu-item admin-menu-item--active"
+                      : "admin-menu-item"
+                  }
+                  onClick={toggleFollowupsPanel}
+                  type="button"
+                >
+                  Followups {followups.length > 0 && `(${followups.length})`}
+                </button>
+              )}
             </nav>
           </div>
 
@@ -1965,7 +2100,7 @@ export default function LeadFeedbackPage({ config, onLogout, user }) {
                       {/* <span>Fetched from upload data</span> */}
                     </div>
                     <div className="data-list">
-                      {config.personalFields.map((field) => (
+                      {activeConfig.personalFields.map((field) => (
                         <FieldValue
                           key={field.name}
                           label={field.label}
@@ -1982,7 +2117,7 @@ export default function LeadFeedbackPage({ config, onLogout, user }) {
                       {/* <span>Fetched from database</span> */}
                     </div>
                     <div className="data-list">
-                      {config.loanFields.map((field) => (
+                      {activeConfig.loanFields.map((field) => (
                         <FieldValue
                           key={field.name}
                           label={field.label}
@@ -1996,12 +2131,12 @@ export default function LeadFeedbackPage({ config, onLogout, user }) {
 
                 <section
                   className="panel feedback-panel"
-                  aria-label="Feedback form"
+                  aria-label={isFollowupMode ? "Follow-up form" : "Feedback form"}
                 >
                   <div className="feedback-heading">
                     <div>
                       {/* <p className="eyebrow">Agent editable fields</p> */}
-                      <h2>Feedback Form</h2>
+                      <h2>{isFollowupMode ? "Follow-up Form" : "Feedback Form"}</h2>
                     </div>
                     <div className="status-card">
                       <span>Status</span>
@@ -2031,11 +2166,13 @@ export default function LeadFeedbackPage({ config, onLogout, user }) {
                       field={{
                         label: "Disposition",
                         name: "disposition",
-                        options: config.dispositionGroups.map(
+                        options: activeConfig.dispositionGroups.map(
                           (group) => group.name,
                         ),
                         required: true,
-                        help: "Dropdown. Select Positive, Contacted, Non Contacted, or Backend NC.",
+                        help: isFollowupMode
+                          ? "Dropdown. Select Filed/TCM Positive Contact, Filed/TCM Contact, or Filed/TCM Non Contact."
+                          : "Dropdown. Select Positive, Contacted, Non Contacted, or Backend NC.",
                       }}
                       onChange={onFeedbackChange}
                       value={feedbackValues.disposition}
@@ -2056,7 +2193,7 @@ export default function LeadFeedbackPage({ config, onLogout, user }) {
                         field={{
                           label: "Payment Mode",
                           name: "paymentMode",
-                          options: config.paymentModes,
+                          options: activeConfig.paymentModes,
                           required: requiredFieldNames.has("paymentMode"),
                           help: requiredFieldNames.has("paymentMode")
                             ? "Dropdown required for this disposition."
@@ -2145,6 +2282,7 @@ export default function LeadFeedbackPage({ config, onLogout, user }) {
         lead={previewLead}
         onClose={() => setPreviewLead(null)}
         onOpen={openLead}
+        config={config}
       />
     </main>
   );

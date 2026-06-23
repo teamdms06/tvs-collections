@@ -5,6 +5,7 @@ import com.tvscollections.backend.dto.AgentCallLogRequestDto;
 import com.tvscollections.backend.dto.HitCallLogDto;
 import com.tvscollections.backend.dto.HitCallLogRequestDto;
 import com.tvscollections.backend.model.User;
+import com.tvscollections.backend.repository.HitCallLogRepository;
 import com.tvscollections.backend.repository.UserRepository;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
@@ -21,6 +22,7 @@ public class HitCallAgentResolverService {
     private final UserRepository userRepository;
     private final DialerProxyService dialerProxyService;
     private final AgentCallLogService agentCallLogService;
+    private final HitCallLogRepository hitCallLogRepository;
     private final ObjectMapper objectMapper;
     private final int attempts;
     private final long retryDelayMs;
@@ -28,12 +30,14 @@ public class HitCallAgentResolverService {
     public HitCallAgentResolverService(UserRepository userRepository,
                                        DialerProxyService dialerProxyService,
                                        AgentCallLogService agentCallLogService,
+                                       HitCallLogRepository hitCallLogRepository,
                                        ObjectMapper objectMapper,
                                        @Value("${hit-call.agent-resolve-attempts:8}") int attempts,
                                        @Value("${hit-call.agent-resolve-delay-ms:1500}") long retryDelayMs) {
         this.userRepository = userRepository;
         this.dialerProxyService = dialerProxyService;
         this.agentCallLogService = agentCallLogService;
+        this.hitCallLogRepository = hitCallLogRepository;
         this.objectMapper = objectMapper;
         this.attempts = Math.max(attempts, 1);
         this.retryDelayMs = Math.max(retryDelayMs, 250);
@@ -102,6 +106,7 @@ public class HitCallAgentResolverService {
                 request.agentDetailJson = objectMapper.writeValueAsString(agentStatus);
 
                 agentCallLogService.createLog(request, user);
+                updateHitCallLogWithAgent(hitCallLog.id, user, agentStatus);
                 return true;
             } catch (Exception error) {
                 System.out.println("Hit call agent resolver failed to save agent call for hitCallLogId="
@@ -230,6 +235,28 @@ public class HitCallAgentResolverService {
             Thread.sleep(retryDelayMs);
         } catch (InterruptedException error) {
             Thread.currentThread().interrupt();
+        }
+    }
+
+    private void updateHitCallLogWithAgent(Long hitCallLogId, User user, Map<String, String> agentStatus) {
+        try {
+            hitCallLogRepository.findById(hitCallLogId).ifPresent(log -> {
+                log.agent = user;
+                log.selectedAgentUser = user.dialerUser;
+                log.selectedAgentName = user.name;
+                log.selectedAgentStatus = agentStatus.get("status");
+                log.selectedAgentSessionId = agentStatus.get("session_id");
+                log.selectedAgentLeadId = agentStatus.get("lead_id");
+                log.selectedAgentCallsToday = parseInteger(agentStatus.get("calls_today"));
+                try {
+                    log.selectedAgentDetailJson = objectMapper.writeValueAsString(agentStatus);
+                } catch (Exception jsonError) {
+                    // ignore
+                }
+                hitCallLogRepository.save(log);
+            });
+        } catch (Exception error) {
+            System.out.println("HitCallAgentResolverService failed to update HitCallLog with resolved agent details: " + error.getMessage());
         }
     }
 }

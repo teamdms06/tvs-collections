@@ -6,16 +6,13 @@ import jakarta.persistence.*;
 
 import java.time.LocalDateTime;
 
-@JsonIgnoreProperties({"hibernateLazyInitializer", "handler"})
+@JsonIgnoreProperties({ "hibernateLazyInitializer", "handler" })
 @Entity
-@Table(
-        name = "feedback",
-        indexes = {
-                @Index(name = "idx_feedback_created_at", columnList = "created_at"),
-                @Index(name = "idx_feedback_upload_file_data_created_at", columnList = "upload_file_data_id, created_at"),
-                @Index(name = "idx_feedback_agent_created_at", columnList = "agent_id, created_at")
-        }
-)
+@Table(name = "feedback", indexes = {
+        @Index(name = "idx_feedback_created_at", columnList = "created_at"),
+        @Index(name = "idx_feedback_upload_file_data_created_at", columnList = "upload_file_data_id, created_at"),
+        @Index(name = "idx_feedback_agent_created_at", columnList = "agent_id, created_at")
+})
 public class Feedback {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -88,6 +85,9 @@ public class Feedback {
     @Column(columnDefinition = "TEXT")
     public String remark;
 
+    @Column(name = "is_followup", nullable = false, columnDefinition = "bit default 0")
+    public Boolean isFollowup = false;
+
     @Column(name = "created_at", nullable = false)
     public LocalDateTime createdAt;
 
@@ -98,6 +98,9 @@ public class Feedback {
     public void prePersist() {
         if (createdAt == null) {
             createdAt = LocalDateTime.now();
+        }
+        if (isFollowup == null) {
+            isFollowup = false;
         }
     }
 }

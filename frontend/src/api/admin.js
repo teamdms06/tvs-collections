@@ -243,3 +243,11 @@ export async function updateAdminUserAccess(userId, isActive) {
 
   return parseResponse(response);
 }
+
+export async function getAdminFollowupLeads() {
+  const response = await fetch(`${API_BASE_URL}/admin/leads/followups`, {
+    headers: getAuthHeaders(),
+  });
+
+  return parseResponse(response);
+}
